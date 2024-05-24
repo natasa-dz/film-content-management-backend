@@ -1,51 +1,44 @@
 import json
-import boto3
 import os
 from datetime import datetime
+import boto3
 
 s3 = boto3.client('s3')
+table_name=os.environ['METADATA_TABLE']
 dynamodb = boto3.resource('dynamodb')
 
 def handler(event, context):
-    
-    # S3 bucket and DynamoDB table names
-    bucket = os.environ['CONTENT_BUCKET']
-    table_name = os.environ['METADATA_TABLE']
-    table = dynamodb.Table(table_name)
+    try:
+        # Parse request body
+        body = json.loads(event['body'])
+        film_id = body.get('film_id')
+        title = body.get('title')
+        director = body.get('director')
+        year = body.get('year')
 
-    # Get the object from the event
-    for record in event['Records']:
-        key = record['s3']['object']['key']
-        response = s3.head_object(Bucket=bucket, Key=key)
+        # Validate required fields
+        if not (film_id and title and director and year):
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Missing required fields'})
+            }
+
+        # Save film data to DynamoDB
         
-        # Extract metadata
-        file_metadata = {
-            'file_name': key,
-            'file_type': key.split('.')[-1],
-            'file_size': response['ContentLength'],
-            'creation_time': response['LastModified'].isoformat(),
-            'last_modified_time': response['LastModified'].isoformat()
+        table = dynamodb.Table(table_name)
+        table.put_item(Item={
+            'film_id': film_id,
+            'title': title,
+            'director': director,
+            'year': year
+        })
+
+        return {
+            'statusCode': 200,
+            'body': json.dumps({'message': 'Film created successfully'})
         }
-        
-        # Generate a unique film ID (you can use a better unique identifier strategy)
-        film_id = key.split('/')[-1].split('.')[0]
-        
-        # Add additional metadata (this can be extended to take more input)
-        additional_metadata = {
-            'title': key.split('/')[-1],
-            'description': '',
-            'actors': [],
-            'directors': [],
-            'genres': []
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
         }
-        
-        # Combine metadata
-        metadata = {**file_metadata, **additional_metadata}
-        
-        # Store metadata in DynamoDB
-        table.put_item(Item={'film_id': film_id, **metadata})
-        
-    return {
-        'statusCode': 200,
-        'body': json.dumps({'message': 'File metadata stored successfully'})
-    }
