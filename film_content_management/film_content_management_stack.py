@@ -7,6 +7,8 @@ from aws_cdk import (
     aws_iam as iam
 )
 from aws_cdk.core import Stack
+from aws_cdk.core import RemovalPolicy
+
 from constructs import Construct
 
 class FilmContentManagementStack(Stack):
@@ -14,13 +16,37 @@ class FilmContentManagementStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # Create S3 bucket and DynamoDB table
-        content_bucket = s3.Bucket(self, "ContentBucket", bucket_name="content-bucket-cloud-film-app")
 
+        AWS_ACCESS_KEY_NATASA = 'AKIA6GBMCEK55KWUXYIF'
+        AWS_SECRET_KEY_NATASA='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'
+
+        # Create S3 bucket with CORS configuration
+        content_bucket = s3.Bucket(
+            self,"ContentBucket",
+            bucket_name="content-bucket-cloud-film-app",
+            
+            cors=[
+                s3.CorsRule(
+                    allowed_methods=[
+                        s3.HttpMethods.GET,
+                        s3.HttpMethods.PUT,
+                        s3.HttpMethods.POST,
+                        s3.HttpMethods.DELETE,
+                        s3.HttpMethods.HEAD
+                    ],
+                    allowed_origins=["*"],
+                    allowed_headers=["*"]
+                )
+            ],
+            removal_policy=RemovalPolicy.DESTROY   
+        )
+
+        # DynamoDB creation
         metadata_table = dynamodb.Table(
             self, "MetadataTable",
             table_name="MetaDataFilms",
-            partition_key={"name": "film_id", "type": dynamodb.AttributeType.STRING}
+            partition_key={"name": "film_id", "type": dynamodb.AttributeType.STRING},
+            removal_policy=RemovalPolicy.DESTROY  
         )
 
         # Lambda functions for CREATE, UPDATE, and GET
@@ -31,7 +57,7 @@ class FilmContentManagementStack(Stack):
             code=_lambda.Code.from_asset("lambda"),
             environment={
                 'CONTENT_BUCKET': content_bucket.bucket_name,
-                'METADATA_TABLE': metadata_table.table_name
+                'METADATA_TABLE': metadata_table.table_name,
             }
         )
 
@@ -58,9 +84,13 @@ class FilmContentManagementStack(Stack):
 
         # Grant permissions to Lambda functions
         content_bucket.grant_read_write(create_film_function)
+        content_bucket.grant_read(get_film_function)
+
         metadata_table.grant_full_access(create_film_function)
         metadata_table.grant_read_write_data(update_film_function)
         metadata_table.grant_read_data(get_film_function)
+
+
 
         # Create API Gateway
         api = apigateway.RestApi(self, "FilmContentApi",
@@ -80,8 +110,12 @@ class FilmContentManagementStack(Stack):
 
 
         film = films.add_resource("{film_id}")
-        film.add_method("PATCH", apigateway.LambdaIntegration(update_film_function))
+        # film.add_method("PATCH", apigateway.LambdaIntegration(update_film_function))
         film.add_method("GET", apigateway.LambdaIntegration(get_film_function))
+
+        download = api.root.add_resource("download")
+        download.add_method("GET", apigateway.LambdaIntegration(get_film_function))
+
 
         # Outputs
         core.CfnOutput(self, "ContentBucketName", value=content_bucket.bucket_name)

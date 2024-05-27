@@ -2,11 +2,14 @@ import json
 import os
 import base64
 import boto3
+import logging
 
 s3 = boto3.client('s3')
 table_name = os.environ['METADATA_TABLE']
 dynamodb = boto3.resource('dynamodb')
 bucket_name = os.environ['CONTENT_BUCKET']
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 #TODO : RESI CUVANJE GLUMACA
 
@@ -48,9 +51,37 @@ def handler(event, context):
             # 'actors':actors
         })
 
-        # Decode the file from base64 and upload to S3
-        file_content = base64.b64decode(file_base64)
-        s3.put_object(Bucket=bucket_name, Key=film_id, Body=file_content)
+# Decode the file from base64
+        try:
+            file_content = base64.b64decode(file_base64)
+        except Exception as e:
+            logger.error(f"Error decoding base64 file: {str(e)}")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Invalid base64 file content'}),
+                'headers': headers
+            }
+
+        # Validate decoded content
+        if not file_content:
+            logger.error('Decoded file content is empty')
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Decoded file content is empty'}),
+                'headers': headers
+            }
+
+        # Upload file to S3
+        try:
+            s3.put_object(Bucket=bucket_name, Key=film_id, Body=file_content)
+            logger.info(f"File for film_id {film_id} uploaded successfully to S3 bucket {bucket_name}")
+        except Exception as e:
+            logger.error(f"Error uploading file to S3: {str(e)}")
+            return {
+                'statusCode': 500,
+                'body': json.dumps({'error': 'Error uploading file to S3'}),
+                'headers': headers
+            }
 
         return {
             'statusCode': 200,
