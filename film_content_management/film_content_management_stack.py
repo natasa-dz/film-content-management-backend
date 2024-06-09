@@ -17,9 +17,6 @@ class FilmContentManagementStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
 
-        AWS_ACCESS_KEY_NATASA = 'AKIA6GBMCEK55KWUXYIF'
-        AWS_SECRET_KEY_NATASA='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'
-
         # Create S3 bucket with CORS configuration
         content_bucket = s3.Bucket(
             self,"ContentBucket",

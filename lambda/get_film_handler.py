@@ -51,8 +51,7 @@ def handler(event, context):
                 response = s3_client.get_object(Bucket=bucket_name, Key=s3_key)
                 file_content = response['Body'].read()
                 file_base64 = base64.b64encode(file_content).decode('utf-8')
-
-                    # Include the file content in the response
+                # Include the file content in the response
                 item['file'] = file_base64
 
                 return {
@@ -85,3 +84,11 @@ def handler(event, context):
             'body': json.dumps({'error': str(e)}),
             'headers': headers
         }
+
+        #Refactor the lambda function to retrieve the film information as well,
+        # when downloading the metadata to get the info about the sizing and download size of the movie,
+        # so its compleete and shown to the user when listing all the movies!
+
+        # add the transcoding option so the movie can be
+        # downloaded in different resolutions
+        # use the transocding options
