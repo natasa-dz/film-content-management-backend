@@ -28,7 +28,7 @@ def handler(event, context):
         headers = {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',  # Or use 'http://localhost:4200'
-        'Access-Control-Allow-Methods': 'OPTIONS,POST,GET,PUT,PATCH',
+        'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
         'Access-Control-Allow-Headers': 'Content-Type,Authorization'
         }
 
