@@ -41,12 +41,73 @@ class FilmContentManagementStack(Stack):
         )
 
         # DynamoDB creation
-        metadata_table = dynamodb.Table(
-            self, "MetadataTable",
-            table_name="MetaDataFilms",
+        movie_table = dynamodb.Table(
+            self, "MoviesTable",
+            table_name="MovieTable",
             partition_key={"name": "film_id", "type": dynamodb.AttributeType.STRING},
-            removal_policy=RemovalPolicy.DESTROY  
+            removal_policy=RemovalPolicy.DESTROY,
+            read_capacity=1,
+            write_capacity=1,
+            stream=dynamodb.StreamViewType.NEW_IMAGE  # Enable streams
+
         )
+
+        # TODO: subscription_table, review_table
+        review_table = dynamodb.Table(
+            self, "ReviewTable",
+            table_name="ReviewTable",
+            partition_key={"name": "review_id", "type": dynamodb.AttributeType.STRING},
+            removal_policy=RemovalPolicy.DESTROY,
+            read_capacity=1,
+            write_capacity=1
+        )
+
+        subscription_table = dynamodb.Table(
+            self, "SubscriptionsTable",
+            table_name="SubscriptionsTable",
+            partition_key={"name": "user_id", "type": dynamodb.AttributeType.STRING},
+            sort_key={"name": "subscription_type", "type": dynamodb.AttributeType.STRING},
+            removal_policy=RemovalPolicy.DESTROY,
+            read_capacity=1,
+            write_capacity=1
+        )
+
+# ----------------- review functions
+        review_function = _lambda.Function(
+            self, "ReviewFunction",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="review_handler.handler",
+            code=_lambda.Code.from_asset("review_service"),
+            environment={
+                'REVIEW_TABLE': review_table.table_name,
+                'MOVIE_TABLE': movie_table.table_name
+            }
+        )
+
+
+# ----------------- notification functions
+
+        # Lambda function to process DynamoDB Stream
+        notification_function = _lambda.Function(
+            self, "NotificationFunction",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="notification_handler.handler",
+            code=_lambda.Code.from_asset("subscription_service"),
+            environment={
+                'SUBSCRIPTIONS_TABLE': 'SubscriptionsTable'
+            }
+        )
+
+        # Add DynamoDB stream as an event source for the Lambda function
+        notification_function.add_event_source(
+            lambda_event_sources.DynamoEventSource(
+                metadata_table,
+                starting_position=_lambda.StartingPosition.TRIM_HORIZON,
+                batch_size=5,
+                bisect_batch_on_function_error=True,
+                retry_attempts=10,
+            )
+
 
         # Create a Cognito User Pool
         user_pool = cognito.UserPool(self, "UserPool",
@@ -130,7 +191,7 @@ class FilmContentManagementStack(Stack):
         registration_login_lambda = _lambda.Function(self, "RegistrationLoginHandler",
             runtime=_lambda.Runtime.PYTHON_3_8,
             handler="login_registration_handler.handler",
-            code=_lambda.Code.from_asset("lambda"), 
+            code=_lambda.Code.from_asset("cognito_service"), 
             environment={
                 'USER_POOL_ID': user_pool.user_pool_id,
                 'USER_POOL_CLIENT_ID': user_pool_client.user_pool_client_id
@@ -147,7 +208,7 @@ class FilmContentManagementStack(Stack):
             code=_lambda.Code.from_asset("lambda"),
             environment={
                 'CONTENT_BUCKET': content_bucket.bucket_name,
-                'METADATA_TABLE': metadata_table.table_name,
+                'METADATA_TABLE': movie_table.table_name,
             }
         )
 
@@ -155,10 +216,10 @@ class FilmContentManagementStack(Stack):
             self, "UpdateFilmFunction",
             runtime=_lambda.Runtime.PYTHON_3_9,
             handler="update_film_handler.handler",
-            code=_lambda.Code.from_asset("lambda"),
+            code=_lambda.Code.from_asset("film_service"),
             environment={
                 'CONTENT_BUCKET': content_bucket.bucket_name,
-                'METADATA_TABLE': metadata_table.table_name
+                'METADATA_TABLE': movie_table.table_name
             }
         )
 
@@ -166,9 +227,9 @@ class FilmContentManagementStack(Stack):
             self, "GetFilmFunction",
             runtime=_lambda.Runtime.PYTHON_3_9,
             handler="get_film_handler.handler",
-            code=_lambda.Code.from_asset("lambda"),
+            code=_lambda.Code.from_asset("film_service"),
             environment={
-                'METADATA_TABLE': metadata_table.table_name,
+                'METADATA_TABLE': movie_table.table_name,
                 'CONTENT_BUCKET': content_bucket.bucket_name
             }
         )
@@ -177,9 +238,9 @@ class FilmContentManagementStack(Stack):
             self, "DeleteFilmFunction",
             runtime=_lambda.Runtime.PYTHON_3_9,
             handler="delete_film_handler.handler",
-            code=_lambda.Code.from_asset("lambda"),
+            code=_lambda.Code.from_asset("film_service"),
             environment={
-                'METADATA_TABLE': metadata_table.table_name,
+                'METADATA_TABLE': movie_table.table_name,
                 'CONTENT_BUCKET': content_bucket.bucket_name
 
             }
@@ -189,10 +250,10 @@ class FilmContentManagementStack(Stack):
             self, "SearchFilmFunction",
             runtime=_lambda.Runtime.PYTHON_3_9,
             handler="search_film_handler.handler",
-            code=_lambda.Code.from_asset("lambda"),
+            code=_lambda.Code.from_asset("film_service"),
             environment={
                 'CONTENT_BUCKET': content_bucket.bucket_name,
-                'METADATA_TABLE': metadata_table.table_name
+                'METADATA_TABLE': movie_table.table_name
             }
         )
 
@@ -208,13 +269,20 @@ class FilmContentManagementStack(Stack):
         content_bucket.grant_read(search_film_function)
 
         # grants dynamoDB
-        metadata_table.grant_full_access(create_film_function)
-        metadata_table.grant_read_data(search_film_function)
 
-        metadata_table.grant_full_access(delete_film_function)
-        metadata_table.grant_read_write_data(update_film_function)
+        # -------------------- movie service grants
+        movie_table.grant_full_access(create_film_function)
+        movie_table.grant_read_data(search_film_function)
 
-        metadata_table.grant_read_data(get_film_function)
+        movie_table.grant_full_access(delete_film_function)
+        movie_table.grant_read_write_data(update_film_function)
+
+        movie_table.grant_read_data(get_film_function)
+
+
+        # ------------------ review service grants
+        review_table.grant_full_access(review_function)
+        movie_table.grant_read_data(review_function)
 
         # Create API Gateway
         api = apigateway.RestApi(self, "FilmContentApi",
@@ -228,22 +296,55 @@ class FilmContentManagementStack(Stack):
         )
 
 
+        # Lambda functions for subscription management
+        create_subscription_function = _lambda.Function(
+            self, "CreateSubscriptionFunction",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="create_subscription_handler.handler",
+            code=_lambda.Code.from_asset("subscription_service"),
+            environment={
+                'SUBSCRIPTIONS_TABLE': subscription_table.table_name
+            }
+        )
+
+        delete_subscription_function = _lambda.Function(
+            self, "DeleteSubscriptionFunction",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="delete_subscription_handler.handler",
+            code=_lambda.Code.from_asset("subscription_service"),
+            environment={
+                'SUBSCRIPTIONS_TABLE': subscription_table.table_name
+            }
+        )
+
+        list_subscriptions_function = _lambda.Function(
+            self, "ListSubscriptionsFunction",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="get_subscriptions_handler.handler",
+            code=_lambda.Code.from_asset("subscription_service"),
+            environment={
+                'SUBSCRIPTIONS_TABLE': subscription_table.table_name
+            }
+        )
+
+        #notify users about subscriptions 
+        subscription_table.grant_full_access(notification_function)
+        # Grant permissions to subscription Lambda functions
+        subscription_table.grant_full_access(create_subscription_function)
+        subscription_table.grant_full_access(delete_subscription_function)
+        subscription_table.grant_read_data(list_subscriptions_function)
+
+
         # Define API resources and methods
+
+# -------- movie service  
+      
         films = api.root.add_resource("films")
         films.add_method("POST", apigateway.LambdaIntegration(create_film_function))
         films.add_method("GET", apigateway.LambdaIntegration(get_film_function))
 
         search = api.root.add_resource("search")
         search.add_method("GET", apigateway.LambdaIntegration(search_film_function))
-
-        register = api.root.add_resource("register")
-        register_integration = apigateway.LambdaIntegration(registration_login_lambda)
-        register.add_method("POST", register_integration)
-
-        login = api.root.add_resource("login")
-        login_integration = apigateway.LambdaIntegration(registration_login_lambda)
-        login.add_method("POST", login_integration)
-
 
         film = films.add_resource("{film_id}")
         film.add_method("PATCH", apigateway.LambdaIntegration(update_film_function))
@@ -253,10 +354,33 @@ class FilmContentManagementStack(Stack):
         download = api.root.add_resource("download")
         download.add_method("GET", apigateway.LambdaIntegration(get_film_function))
 
+# ----------- cognito
 
-        # Outputs
+        register = api.root.add_resource("register")
+        register_integration = apigateway.LambdaIntegration(registration_login_lambda)
+        register.add_method("POST", register_integration)
+
+        login = api.root.add_resource("login")
+        login_integration = apigateway.LambdaIntegration(registration_login_lambda)
+        login.add_method("POST", login_integration)
+
+#------------ subscriptions 
+        subscriptions = api.root.add_resource("subscriptions")
+        subscriptions.add_method("POST", apigateway.LambdaIntegration(create_subscription_function))
+        subscriptions.add_method("GET", apigateway.LambdaIntegration(list_subscriptions_function))
+
+        subscription = subscriptions.add_resource("{subscription_id}")
+        subscription.add_method("DELETE", apigateway.LambdaIntegration(delete_subscription_function))
+
+# ----------- reviews
+        reviews = api.root.add_resource("reviews")
+        reviews.add_method("POST", apigateway.LambdaIntegration(review_function))
+
+    # Outputs
         core.CfnOutput(self, "ContentBucketName", value=content_bucket.bucket_name)
-        core.CfnOutput(self, "MetadataTableName", value=metadata_table.table_name)
+        core.CfnOutput(self, "MetadataTableName", value=movie_table.table_name)
+        core.CfnOutput(self, "ReviewTableName", value=review_table.table_name)
+        core.CfnOutput(self, "SubscriptionsTableName", value=subscription_table.table_name)
         core.CfnOutput(self, "ApiUrl", value=api.url)
         core.CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
         core.CfnOutput(self, "UserPoolClientId", value=user_pool_client.user_pool_client_id)
