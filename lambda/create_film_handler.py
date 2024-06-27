@@ -21,14 +21,14 @@ def handler(event, context):
         title = body.get('title')
         director = body.get('director')
         year = body.get('year')
-        #actors=body.get('actors')
+        actors=body.get('actors')
         description=body.get('description')
         file_base64 = body.get('file')
 
         headers = {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',  # Or use 'http://localhost:4200'
-        'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
+        'Access-Control-Allow-Methods': 'OPTIONS,POST,GET,PUT,PATCH',
         'Access-Control-Allow-Headers': 'Content-Type,Authorization'
         }
 
@@ -48,7 +48,7 @@ def handler(event, context):
             'director': director,
             'year': year,
             'description':description,
-            # 'actors':actors
+            'actors':actors
         })
 
 # Decode the file from base64
