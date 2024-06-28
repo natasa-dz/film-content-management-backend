@@ -23,6 +23,7 @@ def handler(event, context):
         year = body.get('year')
         actors=body.get('actors')
         description=body.get('description')
+        genre=body.get('genre')
         file_base64 = body.get('file')
 
         headers = {
@@ -48,7 +49,8 @@ def handler(event, context):
             'director': director,
             'year': year,
             'description':description,
-            'actors':actors
+            'actors':actors,
+            'genre':genre
         })
 
 # Decode the file from base64

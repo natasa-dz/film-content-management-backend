@@ -4,7 +4,14 @@ import os
 import logging
 from boto3.dynamodb.conditions import Attr
 from botocore.exceptions import ClientError
+from decimal import Decimal
 
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super(DecimalEncoder, self).default(obj)
+    
 # Initialize AWS resources
 dynamodb = boto3.resource('dynamodb')
 table_name = os.environ.get('METADATA_TABLE')
@@ -54,7 +61,7 @@ def handler(event, context):
 
         return {
             'statusCode': 200,
-            'body': json.dumps(items),
+            'body': json.dumps(items, cls=DecimalEncoder),
             'headers': headers
         }
 

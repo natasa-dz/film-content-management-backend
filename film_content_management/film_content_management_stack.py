@@ -5,7 +5,8 @@ from aws_cdk import (
     aws_lambda as _lambda,
     aws_apigateway as apigateway,
     aws_cognito as cognito,
-    aws_iam as iam
+    aws_iam as iam,
+    aws_lambda_event_sources as lambda_event_sources
     )
 
 from aws_cdk.core import Stack
@@ -101,11 +102,11 @@ class FilmContentManagementStack(Stack):
         # Add DynamoDB stream as an event source for the Lambda function
         notification_function.add_event_source(
             lambda_event_sources.DynamoEventSource(
-                metadata_table,
+                movie_table,
                 starting_position=_lambda.StartingPosition.TRIM_HORIZON,
                 batch_size=5,
-                bisect_batch_on_function_error=True,
-                retry_attempts=10,
+                retry_attempts=10
+            )
             )
 
 
@@ -205,7 +206,7 @@ class FilmContentManagementStack(Stack):
             self, "CreateFilmFunction",
             runtime=_lambda.Runtime.PYTHON_3_9,
             handler="create_film_handler.handler",
-            code=_lambda.Code.from_asset("lambda"),
+            code=_lambda.Code.from_asset("film_service"),
             environment={
                 'CONTENT_BUCKET': content_bucket.bucket_name,
                 'METADATA_TABLE': movie_table.table_name,
