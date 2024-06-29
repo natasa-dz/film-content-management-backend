@@ -8,6 +8,12 @@ review_table = dynamodb.Table('ReviewTable')
 movie_table = dynamodb.Table('MovieTable')
 
 def handler(event, context):
+
+    headers = {
+        'Access-Control-Allow-Origin': '*',  
+        'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+        }
     try:
         body = json.loads(event['body'])
         
@@ -16,31 +22,39 @@ def handler(event, context):
         film_id = body['film_id']
         rating_type = body['rating_type']
         rating = body['rating']
-        comment = body.get('comment', "")
+        comment = body['comment']
         
         # Validate rating
         if rating_type not in ["numeric", "like_dislike", "thumbs"]:
             return {
                 'statusCode': 400,
-                'body': json.dumps({'message': 'Invalid rating type'})
+                'body': json.dumps({'message': 'Invalid rating type'}),
+                'headers': headers
+
             }
         
         if rating_type == "numeric" and (rating < 1 or rating > 5):
             return {
                 'statusCode': 400,
-                'body': json.dumps({'message': 'Numeric rating must be between 1 and 5'})
+                'body': json.dumps({'message': 'Numeric rating must be between 1 and 5'}),
+                'headers': headers
+                
             }
         
         if rating_type == "like_dislike" and rating not in ["like", "dislike"]:
             return {
                 'statusCode': 400,
-                'body': json.dumps({'message': 'Like/Dislike rating must be either "like" or "dislike"'})
+                'body': json.dumps({'message': 'Like/Dislike rating must be either "like" or "dislike"'}),
+                'headers': headers
+
             }
         
         if rating_type == "thumbs" and rating not in ["up", "down"]:
             return {
                 'statusCode': 400,
-                'body': json.dumps({'message': 'Thumbs rating must be either "up" or "down"'})
+                'body': json.dumps({'message': 'Thumbs rating must be either "up" or "down"'}),
+                'headers': headers
+
             }
         
         # Check if film exists
@@ -48,7 +62,9 @@ def handler(event, context):
         if 'Item' not in film_response:
             return {
                 'statusCode': 404,
-                'body': json.dumps({'message': 'Film not found'})
+                'body': json.dumps({'message': 'Film not found'}),
+                'headers': headers
+
             }
         
         # Insert review into ReviewTable
@@ -66,11 +82,15 @@ def handler(event, context):
         
         return {
             'statusCode': 200,
-            'body': json.dumps({'message': 'Review submitted successfully'})
+            'body': json.dumps({'message': 'Review submitted successfully'}),
+            'headers': headers
+
         }
         
     except Exception as e:
         return {
             'statusCode': 500,
-            'body': json.dumps({'message': str(e)})
+            'body': json.dumps({'message': str(e)}),
+            'headers': headers
+
         }

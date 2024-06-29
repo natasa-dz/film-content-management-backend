@@ -418,7 +418,7 @@ class FilmContentManagementStack(Stack):
         subscription.add_method("DELETE", apigateway.LambdaIntegration(delete_subscription_function))
 
 # ----------- reviews
-        reviews = api.root.add_resource("reviews")
+        reviews = film.add_resource("reviews")
         reviews.add_method("POST", apigateway.LambdaIntegration(review_function))
 
     # Outputs
