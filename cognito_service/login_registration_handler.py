@@ -7,6 +7,12 @@ def handler(event, context):
     user_pool_id = os.environ['USER_POOL_ID']
     user_pool_client_id = os.environ['USER_POOL_CLIENT_ID']
 
+    headers = {
+        'Access-Control-Allow-Origin': '*',  # Or use 'http://localhost:4200'
+        'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+        }
+
     
     try:
         if event['httpMethod'] == 'POST':
@@ -22,14 +28,20 @@ def handler(event, context):
                         {'Name': 'name', 'Value': body['firstName']},
                         {'Name': 'family_name', 'Value': body['lastName']},
                         {'Name': 'birthdate', 'Value': body['dateOfBirth']},
+                        {'Name': 'custom:role', 'Value': body['role']},
                     ],
                     ValidationData=[
                         {'Name': 'custom:confirmation_status', 'Value': 'auto_confirmed'}
                     ]
                 )
 
+                client.admin_confirm_sign_up(
+                    UserPoolId=user_pool_id,
+                    Username=body['username']
+                )
+
                 # Add the user to the appropriate group
-                group_name = body.get('group', 'User')  # Default to 'User' group if not specified
+                group_name = body.get('role', 'User')  # Default to 'User' group if not specified
                 client.admin_add_user_to_group(
                     UserPoolId=user_pool_id,
                     Username=body['username'],
@@ -39,12 +51,9 @@ def handler(event, context):
                 return {
                     'statusCode': 200,
                     'body': json.dumps(response),
-                    'headers': {
-                    'Access-Control-Allow-Origin': '*',  # Adjust as needed for production
-                    'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
-                    'Access-Control-Allow-Headers': 'Content-Type,Authorization'
-                    }
+                    'headers': headers
                 }
+            
             elif 'login' in event['path']:
                 # Login the user
                 response = client.initiate_auth(
@@ -58,19 +67,24 @@ def handler(event, context):
                 return {
                     'statusCode': 200,
                     'body': json.dumps(response),
-                    'headers': {
-                    'Access-Control-Allow-Origin': '*',  # Adjust as needed for production
-                    'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
-                    'Access-Control-Allow-Headers': 'Content-Type,Authorization'
-                    }
+                    'headers': headers
                 }
+            
+            elif 'confirm' in event['path']:
+                # Confirm the user with the verification code
+                response = client.confirm_sign_up(
+                    ClientId=user_pool_client_id,
+                    Username=body['username'],
+                    ConfirmationCode=body['code']
+                )
+                return {
+                    'statusCode': 200,
+                    'body': json.dumps({'message': 'User confirmed successfully!'}),
+                    'headers': headers
+            }
     except Exception as e:
         return {
             'statusCode': 400,
             'body': json.dumps({'error': str(e)}),
-            'headers': {
-                    'Access-Control-Allow-Origin': '*',  # Adjust as needed for production
-                    'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
-                    'Access-Control-Allow-Headers': 'Content-Type,Authorization'
-            }
+            'headers': headers
         }

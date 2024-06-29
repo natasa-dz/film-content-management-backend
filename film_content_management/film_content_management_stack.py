@@ -53,7 +53,6 @@ class FilmContentManagementStack(Stack):
 
         )
 
-        # TODO: subscription_table, review_table
         review_table = dynamodb.Table(
             self, "ReviewTable",
             table_name="ReviewTable",
@@ -109,7 +108,16 @@ class FilmContentManagementStack(Stack):
             )
             )
 
+# ------------ cognito
 
+        # Pre-sign-up Lambda function
+        # pre_signup_lambda = _lambda.Function(
+        #     self, "PreSignupLambda",
+        #     runtime=_lambda.Runtime.PYTHON_3_9,
+        #     handler="pre_signup_handler.handler",
+        #     code=_lambda.Code.from_asset("cognito_service")
+        # )
+    
         # Create a Cognito User Pool
         user_pool = cognito.UserPool(self, "UserPool",
             user_pool_name="FilmContentManagementUserPool",
@@ -136,15 +144,28 @@ class FilmContentManagementStack(Stack):
                 "confirmation_status": cognito.StringAttribute(
                     min_len=1,
                     mutable=True
-                )
+                ), 
+                'role': cognito.StringAttribute(min_len=1, max_len=20)
+
             }
         )
+
+        
+        # pre_signup_lambda.add_to_role_policy(
+        #     iam.PolicyStatement(
+        #         actions=["cognito-idp:AdminConfirmSignUp"],
+        #         resources=[user_pool.user_pool_arn]
+        #     )
+        # )
 
         # COGNITO IAM POLICY
         cognito_policy = iam.PolicyStatement(
             actions=[
                 "cognito-idp:AdminAddUserToGroup",
                 "cognito-idp:AdminCreateUser",
+                "cognito-idp:SignUp",
+                "cognito-idp:AdminGetUser",
+                "cognito-idp:AdminListGroupsForUser",
                 "cognito-idp:AdminDeleteUser",
                 "cognito-idp:AdminConfirmSignUp",
                 "cognito-idp:AdminInitiateAuth",
@@ -198,8 +219,21 @@ class FilmContentManagementStack(Stack):
                 'USER_POOL_CLIENT_ID': user_pool_client.user_pool_client_id
             }
         )
-        registration_login_lambda.role.add_to_policy(cognito_policy)
 
+        # Lambda user role fetch
+        user_role_fetch_lambda = _lambda.Function(
+            self, "UserRoleFetchHandler",
+            runtime=_lambda.Runtime.PYTHON_3_8,
+            handler="get_user_role_handler.handler",
+            code=_lambda.Code.from_asset("cognito_service"), 
+            environment={
+                'USER_POOL_ID': user_pool.user_pool_id,
+                'USER_POOL_CLIENT_ID': user_pool_client.user_pool_client_id
+            }
+        )
+
+        registration_login_lambda.role.add_to_policy(cognito_policy)
+        user_role_fetch_lambda.role.add_to_policy(cognito_policy)
 
         # Lambda functions for CREATE, UPDATE, and GET
         create_film_function = _lambda.Function(
@@ -336,7 +370,8 @@ class FilmContentManagementStack(Stack):
         subscription_table.grant_read_data(list_subscriptions_function)
 
 
-        # Define API resources and methods
+# ------------------- API METHODS
+
 
 # -------- movie service  
       
@@ -357,6 +392,10 @@ class FilmContentManagementStack(Stack):
 
 # ----------- cognito
 
+        confirm_resource = api.root.add_resource("confirm")
+        confirm_resource.add_method("POST", apigateway.LambdaIntegration(registration_login_lambda))
+
+
         register = api.root.add_resource("register")
         register_integration = apigateway.LambdaIntegration(registration_login_lambda)
         register.add_method("POST", register_integration)
@@ -364,6 +403,11 @@ class FilmContentManagementStack(Stack):
         login = api.root.add_resource("login")
         login_integration = apigateway.LambdaIntegration(registration_login_lambda)
         login.add_method("POST", login_integration)
+
+        fetch_role=api.root.add_resource("fetch-role")
+        fetch_role_integration = apigateway.LambdaIntegration(user_role_fetch_lambda)
+        fetch_role.add_method('GET', fetch_role_integration); 
+
 
 #------------ subscriptions 
         subscriptions = api.root.add_resource("subscriptions")
