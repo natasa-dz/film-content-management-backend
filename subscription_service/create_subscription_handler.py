@@ -15,8 +15,7 @@ dynamodb = boto3.resource('dynamodb')
 table_name = os.environ['SUBSCRIPTIONS_TABLE']
 table = dynamodb.Table(table_name)
 
-def handler(ev
-ent, context):
+def handler(event, context):
     headers={
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
