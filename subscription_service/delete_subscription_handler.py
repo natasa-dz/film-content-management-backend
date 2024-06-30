@@ -1,6 +1,7 @@
 import json
 import boto3
 from botocore.exceptions import ClientError
+import os
 
 dynamodb = boto3.resource('dynamodb')
 table_name = os.environ['SUBSCRIPTIONS_TABLE']
