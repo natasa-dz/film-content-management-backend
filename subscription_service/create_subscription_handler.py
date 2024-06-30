@@ -7,12 +7,30 @@
 import json
 import boto3
 from botocore.exceptions import ClientError
+import json
+import os
+import boto3
 
 dynamodb = boto3.resource('dynamodb')
 table_name = os.environ['SUBSCRIPTIONS_TABLE']
 table = dynamodb.Table(table_name)
 
-def handler(event, context):
+def handler(ev
+ent, context):
+    headers={
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'OPTIONS,POST',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+    }
+
+    # Handle preflight request
+    if event['httpMethod'] == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': headers
+        }
+
     body = json.loads(event['body'])
     user_id = body['user_id']
     subscription_type = body['subscription_type']
@@ -28,18 +46,16 @@ def handler(event, context):
         )
         response = {
             'statusCode': 200,
-            'body': json.dumps({'message': 'Subscription added successfully'})
+            'body': json.dumps({'message': 'Subscription added successfully'}),
+            'headers': headers
+
         }
     except ClientError as e:
         response = {
             'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
+            'body': json.dumps({'error': str(e)}),
+            'headers': headers
 
-    response['headers'] = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'OPTIONS,POST',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization'
-    }
+        }
 
     return response

@@ -11,6 +11,12 @@ def handler(event, context):
     user_id = body['user_id']
     subscription_type = body['subscription_type']
     subscription_value = body['subscription_value']
+
+    headers= {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'OPTIONS,POST,GET,DELETE',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+    }
     
     try:
         table.delete_item(
@@ -23,18 +29,14 @@ def handler(event, context):
         )
         response = {
             'statusCode': 200,
-            'body': json.dumps({'message': 'Subscription deleted successfully'})
+            'body': json.dumps({'message': 'Subscription deleted successfully'}),
+            'headers':headers
         }
     except ClientError as e:
         response = {
             'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
+            'body': json.dumps({'error': str(e)}),
+            'headers':headers
         }
-
-    response['headers'] = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'OPTIONS,POST',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization'
-    }
 
     return response

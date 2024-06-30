@@ -108,16 +108,6 @@ class FilmContentManagementStack(Stack):
             )
             )
 
-# ------------ cognito
-
-        # Pre-sign-up Lambda function
-        # pre_signup_lambda = _lambda.Function(
-        #     self, "PreSignupLambda",
-        #     runtime=_lambda.Runtime.PYTHON_3_9,
-        #     handler="pre_signup_handler.handler",
-        #     code=_lambda.Code.from_asset("cognito_service")
-        # )
-    
         # Create a Cognito User Pool
         user_pool = cognito.UserPool(self, "UserPool",
             user_pool_name="FilmContentManagementUserPool",
@@ -149,14 +139,6 @@ class FilmContentManagementStack(Stack):
 
             }
         )
-
-        
-        # pre_signup_lambda.add_to_role_policy(
-        #     iam.PolicyStatement(
-        #         actions=["cognito-idp:AdminConfirmSignUp"],
-        #         resources=[user_pool.user_pool_arn]
-        #     )
-        # )
 
         # COGNITO IAM POLICY
         cognito_policy = iam.PolicyStatement(
@@ -411,6 +393,7 @@ class FilmContentManagementStack(Stack):
 
 #------------ subscriptions 
         subscriptions = api.root.add_resource("subscriptions")
+
         subscriptions.add_method("POST", apigateway.LambdaIntegration(create_subscription_function))
         subscriptions.add_method("GET", apigateway.LambdaIntegration(list_subscriptions_function))
 
