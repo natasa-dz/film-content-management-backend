@@ -3,6 +3,9 @@ import os
 import base64
 import boto3
 import logging
+import subprocess
+from urllib.parse import unquote_plus
+
 
 s3 = boto3.client('s3')
 table_name = os.environ['METADATA_TABLE']
@@ -101,8 +104,19 @@ def handler(event, context):
 
         # Upload file to S3
         try:
+
             s3.put_object(Bucket=bucket_name, Key=film_id, Body=file_content)
             logger.info(f"File for film_id {film_id} uploaded successfully to S3 bucket {bucket_name}")
+
+            #TRANSCODE VIDEO INTO MULTIPLE RESOLUTIONS
+            # Transcode video into multiple resolutions
+
+            resolutions = ['720p', '1080p', '360p']  # Define your desired resolutions
+            transcode_video(bucket_name, film_id, bucket_name, resolutions)
+
+
+
+
         except Exception as e:
             logger.error(f"Error uploading file to S3: {str(e)}")
             return {
@@ -165,5 +179,25 @@ def notify_subscribers(title, actors, director, genre, description, year):
     except Exception as e:
         logger.error(f"Error notifying users: {str(e)}")
 
+# TODO: UPAMTI DA KADA DOBAVLJAS TRANSCODED FILM IZ S3 BUCKET-A, 
+# ID TI NIJE SAMO FILM_ID, nego ti key izgleda ovako: 
+# film123_720p.mp4 ili film123_360p.mp4 ili filma123_1080p.mp4
 
+def transcode_video(input_bucket, input_key, output_bucket, film_id, title, resolutions):
+    try:
+        input_file = f"/tmp/{os.path.basename(input_key)}"
+        s3.download_file(input_bucket, input_key, input_file)
 
+        for resolution in resolutions:
+            width = resolution.split('p')[0]
+            output_key = f"{film_id}_{resolution}.mp4"
+            output_file = f"/tmp/{title}_{resolution}.mp4"
+
+            subprocess.run(['ffmpeg', '-i', input_file, '-vf', f"scale={width}:-1", output_file], check=True)
+
+            s3.upload_file(output_file, output_bucket, output_key)
+            logger.info(f"Transcoded {resolution} version uploaded to {output_bucket}/{output_key}")
+
+    except Exception as e:
+        logger.error(f"Error transcoding file: {e}")
+        raise
