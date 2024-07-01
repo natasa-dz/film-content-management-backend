@@ -72,6 +72,28 @@ class FilmContentManagementStack(Stack):
             write_capacity=1
         )
 
+
+        # Add the user feed table
+        user_feed_table = dynamodb.Table(
+            self, "UserFeedTable",
+            table_name="UserFeedTable",
+            partition_key={"name": "user_id", "type": dynamodb.AttributeType.STRING},
+            sort_key={"name": "score", "type": dynamodb.AttributeType.NUMBER},
+            removal_policy=RemovalPolicy.DESTROY,
+            read_capacity=1,
+            write_capacity=1
+        )
+
+        # Add the download history table
+        download_history_table = dynamodb.Table(
+            self, "DownloadHistoryTable",
+            table_name="DownloadHistoryTable",
+            partition_key={"name": "user_id", "type": dynamodb.AttributeType.STRING},
+            sort_key={"name": "download_time", "type": dynamodb.AttributeType.STRING},
+            removal_policy=RemovalPolicy.DESTROY,
+            read_capacity=1,
+            write_capacity=1
+        )
 # ----------------- review functions
         review_function = _lambda.Function(
             self, "ReviewFunction",
@@ -247,7 +269,9 @@ class FilmContentManagementStack(Stack):
             code=_lambda.Code.from_asset("film_service"),
             environment={
                 'METADATA_TABLE': movie_table.table_name,
-                'CONTENT_BUCKET': content_bucket.bucket_name
+                'CONTENT_BUCKET': content_bucket.bucket_name,
+                'DOWNLOAD_HISTORY_TABLE': download_history_table.table_name
+
             }
         )
 
@@ -274,7 +298,19 @@ class FilmContentManagementStack(Stack):
             }
         )
 
-        # Grant permissions to Lambda functions
+
+        generate_feed_function = _lambda.Function(
+            self, "GenerateUserFeed",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="generate_feed_handler.handler",
+            code=_lambda.Code.from_asset("feed_service"),
+            environment={
+                'SUBSCRIPTIONS_TABLE': subscription_table.table_name,
+                'METADATA_TABLE':movie_table.table_name,
+                'REVIEW_TABLE':review_table.table_name,
+                'USER_FEED_TABLE':user_feed_table.table_name
+            }
+        )        # Grant permissions to Lambda functions
 
         # grants content bucket
         content_bucket.grant_read_write(create_film_function)
@@ -284,6 +320,8 @@ class FilmContentManagementStack(Stack):
 
         content_bucket.grant_read(get_film_function)
         content_bucket.grant_read(search_film_function)
+
+        content_bucket.grant_read(generate_feed_function)
 
         # grants dynamoDB
 
@@ -296,8 +334,10 @@ class FilmContentManagementStack(Stack):
 
         movie_table.grant_read_data(get_film_function)
 
-
+        movie_table.grant_read(generate_feed_function)
+    
         # ------------------ review service grants
+        review_table.grant_read_data(generate_feed_function)
         review_table.grant_full_access(review_function)
         movie_table.grant_read_data(review_function)
 
@@ -350,6 +390,10 @@ class FilmContentManagementStack(Stack):
         subscription_table.grant_full_access(create_subscription_function)
         subscription_table.grant_full_access(delete_subscription_function)
         subscription_table.grant_read_data(list_subscriptions_function)
+        subscription_table.grant_read_data(generate_feed_function)
+
+        # feed grants
+        user_feed_table.grant_full_access(generate_feed_function)
 
 
 # ------------------- API METHODS
@@ -396,9 +440,8 @@ class FilmContentManagementStack(Stack):
 
         subscriptions.add_method("POST", apigateway.LambdaIntegration(create_subscription_function))
         subscriptions.add_method("GET", apigateway.LambdaIntegration(list_subscriptions_function))
+        subscriptions.add_method("DELETE", apigateway.LambdaIntegration(delete_subscription_function))
 
-        subscription = subscriptions.add_resource("{subscription_id}")
-        subscription.add_method("DELETE", apigateway.LambdaIntegration(delete_subscription_function))
 
 # ----------- reviews
         reviews = film.add_resource("reviews")

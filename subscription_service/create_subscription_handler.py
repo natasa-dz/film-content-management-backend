@@ -11,6 +11,10 @@ import json
 import os
 import boto3
 
+
+sns = boto3.client('sns')
+sns_topic_arn = os.environ['SNS_TOPIC_ARN']
+
 dynamodb = boto3.resource('dynamodb')
 table_name = os.environ['SUBSCRIPTIONS_TABLE']
 table = dynamodb.Table(table_name)
@@ -43,6 +47,14 @@ def handler(event, context):
                 'subscription_value': subscription_value
             }
         )
+
+        # Subscribe the user to the SNS topic
+        sns.subscribe(
+            TopicArn=sns_topic_arn,
+            Protocol='email',  # or 'sms', 'http', etc.
+            Endpoint=user_id  # Assuming user_id is the email address
+        )
+
         response = {
             'statusCode': 200,
             'body': json.dumps({'message': 'Subscription added successfully'}),

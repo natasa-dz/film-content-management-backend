@@ -8,11 +8,37 @@ s3 = boto3.client('s3')
 table_name = os.environ['METADATA_TABLE']
 dynamodb = boto3.resource('dynamodb')
 bucket_name = os.environ['CONTENT_BUCKET']
+
+
+#notifications
+sns = boto3.client('sns')
+subscriptions_table_name = os.environ['SUBSCRIPTIONS_TABLE']
+subscriptions_table = dynamodb.Table(subscriptions_table_name)
+sns_topic_arn = os.environ['SNS_TOPIC_ARN']
+
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-#TODO : RESI CUVANJE GLUMACA
+cognito = boto3.client('cognito-idp')
 
+
+def get_email_by_username(username):
+    try:
+        response = cognito.admin_get_user(
+            UserPoolId=user_pool_id,
+            Username=username
+        )
+        for attribute in response['UserAttributes']:
+            if attribute['Name'] == 'email':
+                return attribute['Value']
+    except cognito.exceptions.UserNotFoundException:
+        logger.error(f"User {username} not found in Cognito.")
+    except Exception as e:
+        logger.error(f"Error retrieving email for user {username}: {str(e)}")
+    return None
+
+#TODO: RESI CUVANJE GLUMACA DA SE CUVA KAO LISTA GLUMACA, A NE KAO STRING GLUMACA, PODELI PO ZAREZU
 def handler(event, context):
     try:
         # Parse request body
@@ -85,13 +111,59 @@ def handler(event, context):
                 'headers': headers
             }
 
+
+        # Notify subscribers
+        notify_subscribers(title, actors, director, genre, description, year)
+
         return {
             'statusCode': 200,
-            'body': json.dumps({'message': 'Film created successfully'}),
-            'headers':headers
+            'body': json.dumps({'message': 'Film created and notifications sent successfully'}),
+            'headers': headers
         }
     except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
         return {
             'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
+            'body': json.dumps({'error': str(e)}),
+            'headers': headers
         }
+    
+
+def notify_subscribers(title, actors, director, genre, description, year):
+    try:
+        # Get all subscriptions that match the film's genre, director, or actors
+        matching_subscriptions = subscriptions_table.scan(
+            FilterExpression=boto3.dynamodb.conditions.Attr('subscription_value').is_in([genre, director, actors])
+        )['Items']
+
+        for subscription in matching_subscriptions:
+            username = subscription['user_id']
+            email = get_email_by_username(username)
+            if email:
+                sns.publish(
+                    TopicArn=sns_topic_arn,
+                    Subject="New Film Uploaded",
+                    Message=(
+                        f"A new film has been uploaded that matches your subscription:\n"
+                        f"Title: {title}\n"
+                        f"Director: {director}\n"
+                        f"Year: {year}\n"
+                        f"Genre: {genre}\n"
+                        f"Description: {description}"
+                    ),
+                    MessageAttributes={
+                        'email': {
+                            'DataType': 'String',
+                            'StringValue': email
+                        }
+                    }
+                ) 
+            else:
+                logger.error(f"Could not retrieve email for user {username}")
+
+        logger.info(f"Notifications sent for film title: {title}")
+    except Exception as e:
+        logger.error(f"Error notifying users: {str(e)}")
+
+
+

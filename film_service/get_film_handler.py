@@ -11,6 +11,8 @@ dynamodb = boto3.resource('dynamodb')
 table_name = os.environ.get('METADATA_TABLE')
 s3_client = boto3.client('s3')
 bucket_name = os.environ.get('CONTENT_BUCKET')
+download_history_table_name = os.environ.get('DOWNLOAD_HISTORY_TABLE')
+
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -29,12 +31,19 @@ def handler(event, context):
         raise TypeError
 
     try:
+
+        #TODO: ADD DOWNLOAD_HISTORY_TABLE CREATION INTO STACK!!!
         table = dynamodb.Table(table_name)
+        download_history_table = dynamodb.Table(download_history_table_name)
+
 
         # Get the film_id from query string parameters if available
         film_id = event['queryStringParameters'].get('film_id') if event.get('queryStringParameters') else None
+        
+        #TODO: ADD USER_ID TO QUERY_STRING_PARAMETERS ON THE FRONT AS WELL SO WE COULD CREATE DOWNLOAD_HISTORY_TABLE
+        user_id = event['queryStringParameters'].get('user_id') if event.get('queryStringParameters') else None
 
-        if film_id:
+        if film_id and user_id:
             response = table.get_item(Key={'film_id': film_id})
             item = response.get('Item', {})
 
@@ -53,6 +62,13 @@ def handler(event, context):
                 file_base64 = base64.b64encode(file_content).decode('utf-8')
                 # Include the file content in the response
                 item['file'] = file_base64
+
+                # Log the download history
+                download_history_table.put_item(Item={
+                    'user_id': user_id,
+                    'film_id': film_id,
+                    'download_time': datetime.utcnow().isoformat()
+                })
 
                 return {
                     'statusCode': 200,
