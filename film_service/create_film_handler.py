@@ -11,6 +11,7 @@ s3 = boto3.client('s3')
 table_name = os.environ['METADATA_TABLE']
 dynamodb = boto3.resource('dynamodb')
 bucket_name = os.environ['CONTENT_BUCKET']
+user_pool_id = os.environ['USER_POOL_ID']
 
 
 #notifications
@@ -108,9 +109,6 @@ def handler(event, context):
             s3.put_object(Bucket=bucket_name, Key=film_id, Body=file_content)
             logger.info(f"File for film_id {film_id} uploaded successfully to S3 bucket {bucket_name}")
 
-            #TRANSCODE VIDEO INTO MULTIPLE RESOLUTIONS
-            # Transcode video into multiple resolutions
-
             resolutions = ['720p', '1080p', '360p']  # Define your desired resolutions
             transcode_video(bucket_name, film_id, bucket_name, resolutions)
 
@@ -146,8 +144,10 @@ def handler(event, context):
 def notify_subscribers(title, actors, director, genre, description, year):
     try:
         # Get all subscriptions that match the film's genre, director, or actors
+        actors_flat = [actor.strip() for actor in actors]
+
         matching_subscriptions = subscriptions_table.scan(
-            FilterExpression=boto3.dynamodb.conditions.Attr('subscription_value').is_in([genre, director, actors])
+            FilterExpression=boto3.dynamodb.conditions.Attr('subscription_value').is_in([genre, director, actors_flat])
         )['Items']
 
         for subscription in matching_subscriptions:
@@ -182,6 +182,7 @@ def notify_subscribers(title, actors, director, genre, description, year):
 # TODO: UPAMTI DA KADA DOBAVLJAS TRANSCODED FILM IZ S3 BUCKET-A, 
 # ID TI NIJE SAMO FILM_ID, nego ti key izgleda ovako: 
 # film123_720p.mp4 ili film123_360p.mp4 ili filma123_1080p.mp4
+# DOK TI JE ID ORIGINALNE REZOLUCIJE film123.mp4, bez sufixa!!!!
 
 def transcode_video(input_bucket, input_key, output_bucket, film_id, title, resolutions):
     try:

@@ -5,6 +5,7 @@ import logging
 from decimal import Decimal
 from botocore.exceptions import ClientError
 import base64
+import datetime
 
 # Initialize AWS resources
 dynamodb = boto3.resource('dynamodb')
@@ -32,15 +33,11 @@ def handler(event, context):
 
     try:
 
-        #TODO: ADD DOWNLOAD_HISTORY_TABLE CREATION INTO STACK!!!
         table = dynamodb.Table(table_name)
         download_history_table = dynamodb.Table(download_history_table_name)
 
 
-        # Get the film_id from query string parameters if available
         film_id = event['queryStringParameters'].get('film_id') if event.get('queryStringParameters') else None
-        
-        #TODO: ADD USER_ID TO QUERY_STRING_PARAMETERS ON THE FRONT AS WELL SO WE COULD CREATE DOWNLOAD_HISTORY_TABLE
         user_id = event['queryStringParameters'].get('user_id') if event.get('queryStringParameters') else None
 
         if film_id and user_id:
@@ -100,11 +97,3 @@ def handler(event, context):
             'body': json.dumps({'error': str(e)}),
             'headers': headers
         }
-
-        #Refactor the lambda function to retrieve the film information as well,
-        # when downloading the metadata to get the info about the sizing and download size of the movie,
-        # so its compleete and shown to the user when listing all the movies!
-
-        # add the transcoding option so the movie can be
-        # downloaded in different resolutions
-        # use the transocding options
