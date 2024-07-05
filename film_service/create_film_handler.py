@@ -20,7 +20,7 @@ subscriptions_table_name = os.environ['SUBSCRIPTIONS_TABLE']
 subscriptions_table = dynamodb.Table(subscriptions_table_name)
 
 #TODO: FALI TI SNS_TOPIC_ARN TO DODAJ!!!!
-sns_topic_arn = os.environ['SNS_TOPIC_ARN']
+#sns_topic_arn = os.environ['SNS_TOPIC_ARN']
 
 
 logger = logging.getLogger()
@@ -50,15 +50,14 @@ def handler(event, context):
         'Access-Control-Allow-Origin': '*',  # Or use 'http://localhost:4200'
         'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
         'Access-Control-Allow-Headers': 'Content-Type,Authorization'
-        }
-        
+    }
+    
     if event['httpMethod'] == 'OPTIONS':
         return {
             'statusCode': 200,
             'headers': headers,
             'body': json.dumps('CORS preflight check')
         }
-
 
     try:
         # Parse request body
@@ -67,18 +66,17 @@ def handler(event, context):
         title = body.get('title')
         director = body.get('director')
         year = body.get('year')
-        actors=body.get('actors')
-        description=body.get('description')
-        genre=body.get('genre')
+        actors = body.get('actors')
+        description = body.get('description')
+        genre = body.get('genre')
         file_base64 = body.get('file')
-
 
         # Validate required fields
         if not (film_id and title and director and year and file_base64):
             return {
                 'statusCode': 400,
                 'body': json.dumps({'error': 'Missing required fields'}),
-                'headers':headers
+                'headers': headers
             }
 
         # Save film data to DynamoDB
@@ -88,12 +86,12 @@ def handler(event, context):
             'title': title,
             'director': director,
             'year': year,
-            'description':description,
-            'actors':actors,
-            'genre':genre
+            'description': description,
+            'actors': actors,
+            'genre': genre
         })
 
-# Decode the file from base64
+        # Decode the file from base64
         try:
             file_content = base64.b64decode(file_base64)
         except Exception as e:
@@ -115,13 +113,20 @@ def handler(event, context):
 
         # Upload file to S3
         try:
-
             s3.put_object(Bucket=bucket_name, Key=film_id, Body=file_content)
             logger.info(f"File for film_id {film_id} uploaded successfully to S3 bucket {bucket_name}")
 
-            resolutions = ['720p', '1080p', '360p']  # Define your desired resolutions
-            transcode_video(bucket_name, film_id, bucket_name, resolutions)
-
+            # Asynchronously invoke the transcoding Lambda function
+            lambda_client = boto3.client('lambda')
+            lambda_client.invoke(
+                FunctionName='transcode_handler',  # Replace with your actual Lambda function name
+                InvocationType='Event',
+                Payload=json.dumps({
+                    'bucket': bucket_name,
+                    'key': film_id,
+                    'resolutions': ['720p', '1080p', '360p']
+                })
+            )
 
         except Exception as e:
             logger.error(f"Error uploading file to S3: {str(e)}")
@@ -131,16 +136,15 @@ def handler(event, context):
                 'headers': headers
             }
 
-
-        # TODO: POPRAVI SNS_ARN TOPIC VARIJABLU!!!
-        # Notify subscribers
-        #notify_subscribers(title, actors, director, genre, description, year)
+        # Notify subscribers (disabled for now)
+        # notify_subscribers(title, actors, director, genre, description, year)
 
         return {
             'statusCode': 200,
-            'body': json.dumps({'message': 'Film created and notifications sent successfully'}),
+            'body': json.dumps({'message': 'Film created and transcoding initiated'}),
             'headers': headers
         }
+
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return {
@@ -163,8 +167,10 @@ def notify_subscribers(title, actors, director, genre, description, year):
             username = subscription['user_id']
             email = get_email_by_username(username)
             if email:
+                #TODO: VRATI TOPIC ARN NAKON STO NAMESTIS TRANSCODING!
+                #TopicArn=sns_topic_arn,
+
                 sns.publish(
-                    TopicArn=sns_topic_arn,
                     Subject="New Film Uploaded",
                     Message=(
                         f"A new film has been uploaded that matches your subscription:\n"

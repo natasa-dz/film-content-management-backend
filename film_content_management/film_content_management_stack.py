@@ -253,9 +253,18 @@ class FilmContentManagementStack(Stack):
                 'SUBSCRIPTIONS_TABLE': subscription_table.table_name,
             },
             timeout=core.Duration.seconds(900)  # Set timeout to 5 minutes (15 min = 900s maximum allowed)
-            #TODO: ako to ne prodje, moraces da razbijas video upload na chunks!
+        )
 
-            
+        # Transcode Lambda function
+        transcode_function = _lambda.Function(
+            self, "TranscodeFunction",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="transcode_handler.handler",
+            code=_lambda.Code.from_asset("film_service"),
+            timeout=core.Duration.minutes(15),
+            environment={
+                'CONTENT_BUCKET': content_bucket.bucket_name,
+            }
         )
 
         update_film_function = _lambda.Function(
@@ -329,6 +338,8 @@ class FilmContentManagementStack(Stack):
         content_bucket.grant_read(search_film_function)
 
         content_bucket.grant_read(generate_feed_function)
+        content_bucket.grant_read_write(transcode_function)
+
 
         # grants dynamoDB
 
@@ -342,7 +353,10 @@ class FilmContentManagementStack(Stack):
         movie_table.grant_read_data(get_film_function)
 
         movie_table.grant_read_data(generate_feed_function)
-    
+
+
+        transcode_function.grant_invoke(create_film_function)
+
         # ------------------ review service grants
         review_table.grant_read_data(generate_feed_function)
         review_table.grant_full_access(review_function)
