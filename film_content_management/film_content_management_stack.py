@@ -354,7 +354,6 @@ class FilmContentManagementStack(Stack):
 
         movie_table.grant_read_data(generate_feed_function)
 
-
         transcode_function.grant_invoke(create_film_function)
 
         # ------------------ review service grants
@@ -469,7 +468,11 @@ class FilmContentManagementStack(Stack):
         reviews.add_method("POST", apigateway.LambdaIntegration(review_function))
 
 # ----------- feed
-    
+
+# ----------- transcoding
+        transcoder=film.add_resource("transcode")  
+        transcoder.add_method("POST", apigateway.LambdaIntegration(transcode_function))
+  
 
     # Outputs
         core.CfnOutput(self, "ContentBucketName", value=content_bucket.bucket_name)

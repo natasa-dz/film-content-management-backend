@@ -116,17 +116,18 @@ def handler(event, context):
             s3.put_object(Bucket=bucket_name, Key=film_id, Body=file_content)
             logger.info(f"File for film_id {film_id} uploaded successfully to S3 bucket {bucket_name}")
 
+            #TODO: NAMESTI KAKO CE SE POZIVATI TRANSCODING!!!!
             # Asynchronously invoke the transcoding Lambda function
-            lambda_client = boto3.client('lambda')
-            lambda_client.invoke(
-                FunctionName='transcode_handler',  # Replace with your actual Lambda function name
-                InvocationType='Event',
-                Payload=json.dumps({
-                    'bucket': bucket_name,
-                    'key': film_id,
-                    'resolutions': ['720p', '1080p', '360p']
-                })
-            )
+            # lambda_client = boto3.client('lambda')
+            # lambda_client.invoke(
+            #     FunctionName='transcode_handler',  # Replace with your actual Lambda function name
+            #     InvocationType='Event',
+            #     Payload=json.dumps({
+            #         'bucket': bucket_name,
+            #         'key': film_id,
+            #         'resolutions': ['720p', '1080p', '360p']
+            #     })
+            # )
 
         except Exception as e:
             logger.error(f"Error uploading file to S3: {str(e)}")
