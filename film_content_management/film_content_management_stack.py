@@ -6,7 +6,8 @@ from aws_cdk import (
     aws_apigateway as apigateway,
     aws_cognito as cognito,
     aws_iam as iam,
-    aws_lambda_event_sources as lambda_event_sources
+    aws_lambda_event_sources as lambda_event_sources,
+    aws_sns as sns
     )
 
 from aws_cdk.core import Stack
@@ -18,8 +19,7 @@ class FilmContentManagementStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
-
-
+        
         # Create S3 bucket with CORS configuration
         content_bucket = s3.Bucket(
             self,"ContentBucket",
@@ -109,27 +109,9 @@ class FilmContentManagementStack(Stack):
 
 # ----------------- notification functions
 
-        # Lambda function to process DynamoDB Stream
-        notification_function = _lambda.Function(
-            self, "NotificationFunction",
-            runtime=_lambda.Runtime.PYTHON_3_9,
-            handler="notification_handler.handler",
-            code=_lambda.Code.from_asset("subscription_service"),
-            environment={
-                'SUBSCRIPTIONS_TABLE': 'SubscriptionsTable'
-            }
+        sns_topic = sns.Topic(self, "FilmSubscriptionTopic",
+            display_name="Film Subscription Notifications"
         )
-
-        # Add DynamoDB stream as an event source for the Lambda function
-        notification_function.add_event_source(
-            lambda_event_sources.DynamoEventSource(
-                movie_table,
-                starting_position=_lambda.StartingPosition.TRIM_HORIZON,
-                batch_size=5,
-                retry_attempts=10
-            )
-            )
-
         # Create a Cognito User Pool
         user_pool = cognito.UserPool(self, "UserPool",
             user_pool_name="FilmContentManagementUserPool",
@@ -161,6 +143,30 @@ class FilmContentManagementStack(Stack):
 
             }
         )
+
+
+        # Lambda function to process DynamoDB Stream
+        notification_function = _lambda.Function(
+            self, "NotificationFunction",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="notification_handler.handler",
+            code=_lambda.Code.from_asset("subscription_service"),
+            environment={
+                'SUBSCRIPTIONS_TABLE': subscription_table.table_name,
+                'SNS_TOPIC_ARN': sns_topic.topic_arn,
+                'USER_POOL_ID': user_pool.user_pool_id
+            }
+        )
+
+        # Add DynamoDB stream as an event source for the Lambda function
+        notification_function.add_event_source(
+            lambda_event_sources.DynamoEventSource(
+                movie_table,
+                starting_position=_lambda.StartingPosition.TRIM_HORIZON,
+                batch_size=5,
+                retry_attempts=10
+            )
+            )
 
         # COGNITO IAM POLICY
         cognito_policy = iam.PolicyStatement(
@@ -207,6 +213,7 @@ class FilmContentManagementStack(Stack):
             group_name="Admin",
             role_arn=admin_role.role_arn
         )
+
         user_group = cognito.CfnUserPoolGroup(self, "UserGroup",
             user_pool_id=user_pool.user_pool_id,
             group_name="User",
@@ -236,9 +243,6 @@ class FilmContentManagementStack(Stack):
             }
         )
 
-        registration_login_lambda.role.add_to_policy(cognito_policy)
-        user_role_fetch_lambda.role.add_to_policy(cognito_policy)
-
         # Lambda functions for CREATE, UPDATE, and GET
         create_film_function = _lambda.Function(
             self, "CreateFilmFunction",
@@ -251,6 +255,8 @@ class FilmContentManagementStack(Stack):
                 'USER_POOL_ID': user_pool.user_pool_id,
                 'USER_POOL_CLIENT_ID': user_pool_client.user_pool_client_id,
                 'SUBSCRIPTIONS_TABLE': subscription_table.table_name,
+                'SNS_TOPIC_ARN': sns_topic.topic_arn  # Add SNS topic ARN as environment variable
+
             },
             timeout=core.Duration.seconds(900)  # Set timeout to 5 minutes (15 min = 900s maximum allowed)
         )
@@ -260,7 +266,7 @@ class FilmContentManagementStack(Stack):
             self, "TranscodeFunction",
             runtime=_lambda.Runtime.PYTHON_3_9,
             handler="transcode_handler.handler",
-            code=_lambda.Code.from_asset("film_service"),
+            code=_lambda.Code.from_asset("transcoding_service"),
             timeout=core.Duration.minutes(15),
             environment={
                 'CONTENT_BUCKET': content_bucket.bucket_name,
@@ -314,7 +320,6 @@ class FilmContentManagementStack(Stack):
             }
         )
 
-
         generate_feed_function = _lambda.Function(
             self, "GenerateUserFeed",
             runtime=_lambda.Runtime.PYTHON_3_9,
@@ -328,51 +333,6 @@ class FilmContentManagementStack(Stack):
             }
         )        # Grant permissions to Lambda functions
 
-        # grants content bucket
-        content_bucket.grant_read_write(create_film_function)
-        content_bucket.grant_read_write(update_film_function)
-
-        content_bucket.grant_delete(delete_film_function)
-
-        content_bucket.grant_read(get_film_function)
-        content_bucket.grant_read(search_film_function)
-
-        content_bucket.grant_read(generate_feed_function)
-        content_bucket.grant_read_write(transcode_function)
-
-
-        # grants dynamoDB
-
-        # -------------------- movie service grants
-        movie_table.grant_full_access(create_film_function)
-        movie_table.grant_read_data(search_film_function)
-
-        movie_table.grant_full_access(delete_film_function)
-        movie_table.grant_read_write_data(update_film_function)
-
-        movie_table.grant_read_data(get_film_function)
-
-        movie_table.grant_read_data(generate_feed_function)
-
-        transcode_function.grant_invoke(create_film_function)
-
-        # ------------------ review service grants
-        review_table.grant_read_data(generate_feed_function)
-        review_table.grant_full_access(review_function)
-        movie_table.grant_read_data(review_function)
-
-        # Create API Gateway
-        api = apigateway.RestApi(self, "FilmContentApi",
-            rest_api_name="Film Content Service",
-            description="This service serves film content.",
-            endpoint_types=[apigateway.EndpointType.REGIONAL],
-            default_cors_preflight_options={
-                "allow_origins": apigateway.Cors.ALL_ORIGINS,
-                "allow_methods": apigateway.Cors.ALL_METHODS
-            }
-        )
-
-
         # Lambda functions for subscription management
         create_subscription_function = _lambda.Function(
             self, "CreateSubscriptionFunction",
@@ -380,8 +340,18 @@ class FilmContentManagementStack(Stack):
             handler="create_subscription_handler.handler",
             code=_lambda.Code.from_asset("subscription_service"),
             environment={
-                'SUBSCRIPTIONS_TABLE': subscription_table.table_name
+                'SUBSCRIPTIONS_TABLE': subscription_table.table_name,
+                'SNS_TOPIC_ARN': sns_topic.topic_arn,  # Add SNS topic ARN as environment variable,
+                'USER_POOL_ID': user_pool.user_pool_id
+
             }
+        )
+
+        create_subscription_function.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["sns:Subscribe"],
+                resources=[sns_topic.topic_arn]
+            )
         )
 
         delete_subscription_function = _lambda.Function(
@@ -404,6 +374,64 @@ class FilmContentManagementStack(Stack):
             }
         )
 
+        # GIVE ADMIN COGNITO POLICY!!!!
+        registration_login_lambda.role.add_to_policy(cognito_policy)
+        user_role_fetch_lambda.role.add_to_policy(cognito_policy)
+        create_film_function.role.add_to_policy(cognito_policy)
+        create_subscription_function.role.add_to_policy(cognito_policy)
+        notification_function.role.add_to_policy(cognito_policy)
+
+        # grants content bucket
+        content_bucket.grant_read_write(create_film_function)
+        content_bucket.grant_read_write(update_film_function)
+
+        content_bucket.grant_delete(delete_film_function)
+
+        content_bucket.grant_read(get_film_function)
+        content_bucket.grant_read(search_film_function)
+
+        content_bucket.grant_read(generate_feed_function)
+        content_bucket.grant_read_write(transcode_function)
+
+        # Grant publish permissions to your transcode Lambda function
+        sns_topic.grant_publish(create_film_function)
+        sns_topic.grant_publish(notification_function)
+
+        
+
+        # grants dynamoDB
+
+        # -------------------- movie service grants
+        movie_table.grant_full_access(create_film_function)
+        movie_table.grant_read_data(search_film_function)
+
+        movie_table.grant_full_access(delete_film_function)
+        movie_table.grant_read_write_data(update_film_function)
+
+        movie_table.grant_read_data(get_film_function)
+
+        movie_table.grant_read_data(generate_feed_function)
+
+        transcode_function.grant_invoke(create_film_function)
+        download_history_table.grant_full_access(get_film_function)
+
+        # ------------------ review service grants
+        review_table.grant_read_data(generate_feed_function)
+        review_table.grant_full_access(review_function)
+        movie_table.grant_read_data(review_function)
+
+        # Create API Gateway
+        api = apigateway.RestApi(self, "FilmContentApi",
+            rest_api_name="Film Content Service",
+            description="This service serves film content.",
+            endpoint_types=[apigateway.EndpointType.REGIONAL],
+            default_cors_preflight_options={
+                "allow_origins": apigateway.Cors.ALL_ORIGINS,
+                "allow_methods": apigateway.Cors.ALL_METHODS
+            }
+        )
+
+
         #notify users about subscriptions 
         subscription_table.grant_full_access(notification_function)
         # Grant permissions to subscription Lambda functions
@@ -411,6 +439,7 @@ class FilmContentManagementStack(Stack):
         subscription_table.grant_full_access(delete_subscription_function)
         subscription_table.grant_read_data(list_subscriptions_function)
         subscription_table.grant_read_data(generate_feed_function)
+        subscription_table.grant_read_data(create_film_function)
 
         # feed grants
         user_feed_table.grant_full_access(generate_feed_function)
@@ -420,7 +449,6 @@ class FilmContentManagementStack(Stack):
 
 
 # -------- movie service  
-      
         films = api.root.add_resource("films")
         films.add_method("POST", apigateway.LambdaIntegration(create_film_function))
         films.add_method("GET", apigateway.LambdaIntegration(get_film_function))
@@ -470,7 +498,7 @@ class FilmContentManagementStack(Stack):
 # ----------- feed
 
 # ----------- transcoding
-        transcoder=film.add_resource("transcode")  
+        transcoder=films.add_resource("transcode")  
         transcoder.add_method("POST", apigateway.LambdaIntegration(transcode_function))
   
 

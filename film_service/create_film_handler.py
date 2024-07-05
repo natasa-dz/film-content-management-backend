@@ -18,9 +18,7 @@ user_pool_id = os.environ['USER_POOL_ID']
 sns = boto3.client('sns')
 subscriptions_table_name = os.environ['SUBSCRIPTIONS_TABLE']
 subscriptions_table = dynamodb.Table(subscriptions_table_name)
-
-#TODO: FALI TI SNS_TOPIC_ARN TO DODAJ!!!!
-#sns_topic_arn = os.environ['SNS_TOPIC_ARN']
+sns_topic_arn = os.environ['SNS_TOPIC_ARN']
 
 
 logger = logging.getLogger()
@@ -116,19 +114,6 @@ def handler(event, context):
             s3.put_object(Bucket=bucket_name, Key=film_id, Body=file_content)
             logger.info(f"File for film_id {film_id} uploaded successfully to S3 bucket {bucket_name}")
 
-            #TODO: NAMESTI KAKO CE SE POZIVATI TRANSCODING!!!!
-            # Asynchronously invoke the transcoding Lambda function
-            # lambda_client = boto3.client('lambda')
-            # lambda_client.invoke(
-            #     FunctionName='transcode_handler',  # Replace with your actual Lambda function name
-            #     InvocationType='Event',
-            #     Payload=json.dumps({
-            #         'bucket': bucket_name,
-            #         'key': film_id,
-            #         'resolutions': ['720p', '1080p', '360p']
-            #     })
-            # )
-
         except Exception as e:
             logger.error(f"Error uploading file to S3: {str(e)}")
             return {
@@ -137,12 +122,12 @@ def handler(event, context):
                 'headers': headers
             }
 
-        # Notify subscribers (disabled for now)
-        # notify_subscribers(title, actors, director, genre, description, year)
+        # Notify subscribers
+        notify_subscribers(title, actors, director, genre, description, year)
 
         return {
             'statusCode': 200,
-            'body': json.dumps({'message': 'Film created and transcoding initiated'}),
+            'body': json.dumps({'message': 'Film created'}),
             'headers': headers
         }
 
@@ -160,18 +145,17 @@ def notify_subscribers(title, actors, director, genre, description, year):
         # Get all subscriptions that match the film's genre, director, or actors
         actors_flat = [actor.strip() for actor in actors]
 
+        # Scan subscriptions table for items matching genre, director, or actors
         matching_subscriptions = subscriptions_table.scan(
-            FilterExpression=boto3.dynamodb.conditions.Attr('subscription_value').is_in([genre, director, actors_flat])
+            FilterExpression=boto3.dynamodb.conditions.Attr('subscription_value').is_in([genre, director] + actors_flat)
         )['Items']
 
         for subscription in matching_subscriptions:
             username = subscription['user_id']
             email = get_email_by_username(username)
-            if email:
-                #TODO: VRATI TOPIC ARN NAKON STO NAMESTIS TRANSCODING!
-                #TopicArn=sns_topic_arn,
-
+            if email:                
                 sns.publish(
+                    TopicArn=sns_topic_arn,
                     Subject="New Film Uploaded",
                     Message=(
                         f"A new film has been uploaded that matches your subscription:\n"
@@ -194,27 +178,3 @@ def notify_subscribers(title, actors, director, genre, description, year):
         logger.info(f"Notifications sent for film title: {title}")
     except Exception as e:
         logger.error(f"Error notifying users: {str(e)}")
-
-# TODO: UPAMTI DA KADA DOBAVLJAS TRANSCODED FILM IZ S3 BUCKET-A, 
-# ID TI NIJE SAMO FILM_ID, nego ti key izgleda ovako: 
-# film123_720p.mp4 ili film123_360p.mp4 ili filma123_1080p.mp4
-# DOK TI JE ID ORIGINALNE REZOLUCIJE film123.mp4, bez sufixa!!!!
-
-def transcode_video(input_bucket, input_key, output_bucket, film_id, title, resolutions):
-    try:
-        input_file = f"/tmp/{os.path.basename(input_key)}"
-        s3.download_file(input_bucket, input_key, input_file)
-
-        for resolution in resolutions:
-            width = resolution.split('p')[0]
-            output_key = f"{film_id}_{resolution}.mp4"
-            output_file = f"/tmp/{title}_{resolution}.mp4"
-
-            subprocess.run(['ffmpeg', '-i', input_file, '-vf', f"scale={width}:-1", output_file], check=True)
-
-            s3.upload_file(output_file, output_bucket, output_key)
-            logger.info(f"Transcoded {resolution} version uploaded to {output_bucket}/{output_key}")
-
-    except Exception as e:
-        logger.error(f"Error transcoding file: {e}")
-        raise

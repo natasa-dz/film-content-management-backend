@@ -10,6 +10,10 @@ from botocore.exceptions import ClientError
 import json
 import os
 import boto3
+import logging
+
+cognito = boto3.client('cognito-idp')
+user_pool_id = os.environ['USER_POOL_ID']
 
 
 sns = boto3.client('sns')
@@ -18,6 +22,27 @@ sns_topic_arn = os.environ['SNS_TOPIC_ARN']
 dynamodb = boto3.resource('dynamodb')
 table_name = os.environ['SUBSCRIPTIONS_TABLE']
 table = dynamodb.Table(table_name)
+
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+
+def get_email_by_username(username):
+    try:
+        response = cognito.admin_get_user(
+            UserPoolId=user_pool_id,
+            Username=username
+        )
+        for attribute in response['UserAttributes']:
+            if attribute['Name'] == 'email':
+                print(f"Email found for user {username}: {attribute['Value']}")
+                return attribute['Value']
+    except cognito.exceptions.UserNotFoundException:
+        print(f"User {username} not found in Cognito.")
+    except Exception as e:
+        print(f"Error retrieving email for user {username}: {str(e)}")
+    return None
 
 def handler(event, context):
     headers={
@@ -52,7 +77,7 @@ def handler(event, context):
         sns.subscribe(
             TopicArn=sns_topic_arn,
             Protocol='email',  # or 'sms', 'http', etc.
-            Endpoint=user_id  # Assuming user_id is the email address
+            Endpoint=get_email_by_username(user_id)
         )
 
         response = {
