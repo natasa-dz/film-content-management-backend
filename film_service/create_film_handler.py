@@ -18,6 +18,8 @@ user_pool_id = os.environ['USER_POOL_ID']
 sns = boto3.client('sns')
 subscriptions_table_name = os.environ['SUBSCRIPTIONS_TABLE']
 subscriptions_table = dynamodb.Table(subscriptions_table_name)
+
+#TODO: FALI TI SNS_TOPIC_ARN TO DODAJ!!!!
 sns_topic_arn = os.environ['SNS_TOPIC_ARN']
 
 
@@ -25,7 +27,6 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 cognito = boto3.client('cognito-idp')
-
 
 def get_email_by_username(username):
     try:
@@ -42,8 +43,23 @@ def get_email_by_username(username):
         logger.error(f"Error retrieving email for user {username}: {str(e)}")
     return None
 
-#TODO: RESI CUVANJE GLUMACA DA SE CUVA KAO LISTA GLUMACA, A NE KAO STRING GLUMACA, PODELI PO ZAREZU
 def handler(event, context):
+
+    headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',  # Or use 'http://localhost:4200'
+        'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+        }
+        
+    if event['httpMethod'] == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': headers,
+            'body': json.dumps('CORS preflight check')
+        }
+
+
     try:
         # Parse request body
         body = json.loads(event['body'])
@@ -56,12 +72,6 @@ def handler(event, context):
         genre=body.get('genre')
         file_base64 = body.get('file')
 
-        headers = {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',  # Or use 'http://localhost:4200'
-        'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization'
-        }
 
         # Validate required fields
         if not (film_id and title and director and year and file_base64):
@@ -113,8 +123,6 @@ def handler(event, context):
             transcode_video(bucket_name, film_id, bucket_name, resolutions)
 
 
-
-
         except Exception as e:
             logger.error(f"Error uploading file to S3: {str(e)}")
             return {
@@ -124,8 +132,9 @@ def handler(event, context):
             }
 
 
+        # TODO: POPRAVI SNS_ARN TOPIC VARIJABLU!!!
         # Notify subscribers
-        notify_subscribers(title, actors, director, genre, description, year)
+        #notify_subscribers(title, actors, director, genre, description, year)
 
         return {
             'statusCode': 200,

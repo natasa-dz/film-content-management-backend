@@ -29,7 +29,6 @@ def get_user_downloads(user_id):
     )
     return response.get('Items', [])
 
-#function that will calculate the score for each film in the list of films
 
 def calculate_score(film, user_ratings, user_subscriptions, user_downloads):
     score = 0

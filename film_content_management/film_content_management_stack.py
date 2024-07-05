@@ -248,7 +248,14 @@ class FilmContentManagementStack(Stack):
             environment={
                 'CONTENT_BUCKET': content_bucket.bucket_name,
                 'METADATA_TABLE': movie_table.table_name,
-            }
+                'USER_POOL_ID': user_pool.user_pool_id,
+                'USER_POOL_CLIENT_ID': user_pool_client.user_pool_client_id,
+                'SUBSCRIPTIONS_TABLE': subscription_table.table_name,
+            },
+            timeout=core.Duration.seconds(900)  # Set timeout to 5 minutes (15 min = 900s maximum allowed)
+            #TODO: ako to ne prodje, moraces da razbijas video upload na chunks!
+
+            
         )
 
         update_film_function = _lambda.Function(
@@ -334,7 +341,7 @@ class FilmContentManagementStack(Stack):
 
         movie_table.grant_read_data(get_film_function)
 
-        movie_table.grant_read(generate_feed_function)
+        movie_table.grant_read_data(generate_feed_function)
     
         # ------------------ review service grants
         review_table.grant_read_data(generate_feed_function)
@@ -446,6 +453,9 @@ class FilmContentManagementStack(Stack):
 # ----------- reviews
         reviews = film.add_resource("reviews")
         reviews.add_method("POST", apigateway.LambdaIntegration(review_function))
+
+# ----------- feed
+    
 
     # Outputs
         core.CfnOutput(self, "ContentBucketName", value=content_bucket.bucket_name)
