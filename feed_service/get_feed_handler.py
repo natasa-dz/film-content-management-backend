@@ -7,7 +7,7 @@ dynamodb = boto3.resource('dynamodb')
 user_feed_table = dynamodb.Table(os.environ['USER_FEED_TABLE'])
 
 def lambda_handler(event, context):
-    user_id = event['pathParameters']['user_id']
+    user_id = event['queryStringParameters']['user_id']
 
     try:
         # Query the user feed table to get the feed for the user
