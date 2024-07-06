@@ -5,7 +5,7 @@ import logging
 from decimal import Decimal
 from botocore.exceptions import ClientError
 import base64
-import datetime
+from datetime import datetime, timezone
 
 # Initialize AWS resources
 dynamodb = boto3.resource('dynamodb')
@@ -64,7 +64,7 @@ def handler(event, context):
                 download_history_table.put_item(Item={
                     'user_id': user_id,
                     'film_id': film_id,
-                    'download_time': datetime.utcnow().isoformat()
+                    'download_time': datetime.now(timezone.utc).isoformat()
                 })
 
                 return {

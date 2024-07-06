@@ -88,14 +88,31 @@ def handler(event, context):
     scored_films.sort(key=lambda x: x['score'], reverse=True)
 
     # Return top 10 films
-    feed = [film['film'] for film in scored_films[:10]]
-
-    for film in feed:
-            user_feed_table.put_item(Item={
+    feed = []
+    for film in scored_films[:10]:
+        film_info = {
+            'film_id': film['film']['film_id'],
+            'title': film['film']['title'],
+            'director': film['film']['director'],
+            'year': film['film']['year'],
+            'description': film['film']['description'],
+            'actors': film['film']['actors'],
+            'genre': film['film']['genre'],
+            'score': film['score']
+        }
+        feed.append(film_info)
+        
+        # Update user feed table
+        user_feed_table.put_item(Item={
             'user_id': user_id,
-            'film_id': film['film_id'],
-            'title': film['title'],
-            'score': next((item['score'] for item in scored_films if item['film']['film_id'] == film['film_id']), 0)
+            'film_id': film_info['film_id'],
+            'title': film_info['title'],
+            'director': film_info['director'],
+            'year': film_info['year'],
+            'description': film_info['description'],
+            'actors': film_info['actors'],
+            'genre': film_info['genre'],
+            'score': film_info['score']
         })
 
 

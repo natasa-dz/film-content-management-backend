@@ -329,10 +329,20 @@ class FilmContentManagementStack(Stack):
                 'SUBSCRIPTIONS_TABLE': subscription_table.table_name,
                 'METADATA_TABLE':movie_table.table_name,
                 'REVIEW_TABLE':review_table.table_name,
-                'USER_FEED_TABLE':user_feed_table.table_name
+                'USER_FEED_TABLE':user_feed_table.table_name,
+                'USER_DOWNLOADS_TABLE':download_history_table.table_name
             }
         )        # Grant permissions to Lambda functions
 
+        get_feed_function = _lambda.Function(
+            self, "GetUserFeed",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="get_feed_handler.handler",
+            code=_lambda.Code.from_asset("feed_service"),
+            environment={
+                'USER_FEED_TABLE':user_feed_table.table_name,
+            }
+        )   
         # Lambda functions for subscription management
         create_subscription_function = _lambda.Function(
             self, "CreateSubscriptionFunction",
@@ -431,7 +441,6 @@ class FilmContentManagementStack(Stack):
             }
         )
 
-
         #notify users about subscriptions 
         subscription_table.grant_full_access(notification_function)
         # Grant permissions to subscription Lambda functions
@@ -443,6 +452,7 @@ class FilmContentManagementStack(Stack):
 
         # feed grants
         user_feed_table.grant_full_access(generate_feed_function)
+        user_feed_table.grant_read_data(get_feed_function)
 
 
 # ------------------- API METHODS
@@ -496,6 +506,11 @@ class FilmContentManagementStack(Stack):
         reviews.add_method("POST", apigateway.LambdaIntegration(review_function))
 
 # ----------- feed
+        generate_feed = api.root.add_resource("generate-feed")
+        generate_feed.add_method("GET", apigateway.LambdaIntegration(generate_feed_function))
+
+        get_feed = api.root.add_resource("get-feed")
+        get_feed.add_method("GET", apigateway.LambdaIntegration(get_feed_function))
 
 # ----------- transcoding
         transcoder=films.add_resource("transcode")  
