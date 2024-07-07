@@ -1,6 +1,8 @@
 import boto3
 import json
-from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Key
+
 import os
 
 dynamodb = boto3.resource('dynamodb')
@@ -36,7 +38,7 @@ def calculate_score(film, user_ratings, user_subscriptions, user_downloads):
     for rating in user_ratings:
         if rating['film_id'] == film['film_id']:
             rating_type = rating.get('rating_type')
-            rating_value = rating.get('rating_value')
+            rating_value = rating.get('rating')
 
             if rating_type == 'numeric':
                 if rating_value > 2:  
@@ -119,7 +121,6 @@ def handler(event, context):
         'statusCode': 200,
         'body': json.dumps({'message': 'Feed updated successfully'}),
         'headers': {
-            'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
             'Access-Control-Allow-Headers': 'Content-Type,Authorization'

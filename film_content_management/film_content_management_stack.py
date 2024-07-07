@@ -424,6 +424,7 @@ class FilmContentManagementStack(Stack):
 
         transcode_function.grant_invoke(create_film_function)
         download_history_table.grant_full_access(get_film_function)
+        download_history_table.grant_read_data(generate_feed_function)
 
         # ------------------ review service grants
         review_table.grant_read_data(generate_feed_function)
