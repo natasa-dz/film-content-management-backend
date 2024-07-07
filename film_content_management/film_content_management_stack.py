@@ -261,6 +261,21 @@ class FilmContentManagementStack(Stack):
             timeout=core.Duration.seconds(900)  # Set timeout to 5 minutes (15 min = 900s maximum allowed)
         )
 
+        #Transcode Lambda layer with FFmpeg
+          # Create Lambda Layer
+        ffmpeg_layer = _lambda.LayerVersion(self, "FFmpegLayer",
+            code=_lambda.AssetCode("lambda/layers/ffmpeg"),
+            compatible_runtimes=[_lambda.Runtime.PYTHON_3_9],
+            description="A layer with FFmpeg"
+        )
+
+        # Create Lambda Layer for Python dependencies
+        python_dependencies_layer = _lambda.LayerVersion(self, "PythonDependenciesLayer",
+            code=_lambda.AssetCode("lambda/layers/python"),
+            compatible_runtimes=[_lambda.Runtime.PYTHON_3_9],
+            description="A layer with Python dependencies"
+        )
+
         # Transcode Lambda function
         transcode_function = _lambda.Function(
             self, "TranscodeFunction",
@@ -270,7 +285,8 @@ class FilmContentManagementStack(Stack):
             timeout=core.Duration.minutes(15),
             environment={
                 'CONTENT_BUCKET': content_bucket.bucket_name,
-            }
+            },
+            layers= [ffmpeg_layer, python_dependencies_layer]
         )
 
         update_film_function = _lambda.Function(
