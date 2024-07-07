@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os
 
-from aws_cdk import core as cdk
+import aws_cdk as cdk
 
 from film_content_management.film_content_management_stack import FilmContentManagementStack
 
