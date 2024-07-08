@@ -6,9 +6,17 @@ from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
 from decimal import Decimal
 
+
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super(DecimalEncoder, self).default(obj)
+
+
 # Initialize AWS resources
 dynamodb = boto3.resource('dynamodb')
-table_name = os.environ.get('METADATA_TABLE')  # Adjust this to your table name
+table_name = os.environ.get('METADATA_TABLE')
 table = dynamodb.Table(table_name)
 s3_client = boto3.client('s3')
 bucket_name = os.environ.get('CONTENT_BUCKET')
@@ -16,11 +24,6 @@ bucket_name = os.environ.get('CONTENT_BUCKET')
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-class DecimalEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super(DecimalEncoder, self).default(obj)
 
 def handler(event, context):
     headers = {
@@ -33,62 +36,81 @@ def handler(event, context):
     try:
         # Extract query parameters
         query_params = event.get('queryStringParameters', {})
-        title = query_params.get('title', '')
-        description = query_params.get('description', '')
-        actors = query_params.get('actors', '')
-        director = query_params.get('director', '')
-        genre = query_params.get('genre', '')
 
-        # Initialize filter expressions
-        filter_expression = None
+        # Construct key condition expression and filter expression
+        key_condition_expression = None
+        filter_expression = ''
+        expression_attribute_values = {}
 
-        # Build filter expressions for each specified query parameter
-        if title:
-            filter_expression = Key('title').eq(title)
-        if description:
-            if filter_expression:
-                filter_expression &= Attr('description').contains(description)
-            else:
-                filter_expression = Attr('description').contains(description)
-        if actors:
-            if filter_expression:
-                filter_expression &= Attr('actors').contains(actors)
-            else:
-                filter_expression = Attr('actors').contains(actors)
-        if director:
-            if filter_expression:
-                filter_expression &= Attr('director').contains(director)
-            else:
-                filter_expression = Attr('director').contains(director)
-        if genre:
-            if filter_expression:
-                filter_expression &= Attr('genre').contains(genre)
-            else:
-                filter_expression = Attr('genre').contains(genre)
+        # Assuming the query parameter for title is mandatory for using the GSI
+        if 'title' in query_params:
+            key_condition_expression = Key('title').eq(query_params['title'])
 
-        # Perform query using the Global Secondary Index (GSI) for Title if title is provided
-        if title:
-            response = table.query(
-                IndexName='TitleIndex',  # Use the GSI name for querying
-                KeyConditionExpression=Key('title').eq(title)
-            )
+            # Construct filter expression for additional filters
+            filters = ['description', 'actors', 'director', 'genre']
+            for key in filters:
+                if key in query_params:
+                    if filter_expression:
+                        filter_expression += ' AND '
+                    filter_expression += f"contains({key}, :{key})"
+                    expression_attribute_values[f':{key}'] = query_params[key]
+
+            # Perform query using the Global Secondary Index (GSI) for Title
+            if filter_expression:
+                response = table.query(
+                    IndexName='TitleIndex',
+                    KeyConditionExpression=key_condition_expression,
+                    FilterExpression=filter_expression,
+                    ExpressionAttributeValues=expression_attribute_values
+                )
+            else:
+                response = table.query(
+                    IndexName='TitleIndex',
+                    KeyConditionExpression=key_condition_expression,
+                )
+
+            items = response.get('Items', [])
+
+            while 'LastEvaluatedKey' in response:
+                if filter_expression:
+                    response = table.query(
+                        IndexName='TitleIndex',
+                        KeyConditionExpression=key_condition_expression,
+                        FilterExpression=filter_expression,
+                        ExpressionAttributeValues=expression_attribute_values,
+                        ExclusiveStartKey=response['LastEvaluatedKey']
+                    )
+                else:
+                    response = table.query(
+                        IndexName='TitleIndex',
+                        KeyConditionExpression=key_condition_expression,
+                        ExclusiveStartKey=response['LastEvaluatedKey']
+                    )
+                items.extend(response.get('Items', []))
+
+            return {
+                'statusCode': 200,
+                'body': json.dumps(items, cls=DecimalEncoder),
+                'headers': headers
+            }
+
         else:
-            # If no title is specified, use scan with the constructed filter expression
-            if filter_expression:
-                response = table.scan(FilterExpression=filter_expression)
-            else:
-                response = table.scan()
+            # If title is not provided, return an error response
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Title is required for querying'}),
+                'headers': headers
+            }
 
-        items = response.get('Items', [])
-
+    except ClientError as e:
+        logger.error(e.response['Error']['Message'])
         return {
-            'statusCode': 200,
-            'body': json.dumps(items, cls=DecimalEncoder),
+            'statusCode': 500,
+            'body': json.dumps({'error': e.response['Error']['Message']}),
             'headers': headers
         }
-
     except Exception as e:
-        logger.error(e)
+        logger.error(str(e))
         return {
             'statusCode': 500,
             'body': json.dumps({'error': str(e)}),
