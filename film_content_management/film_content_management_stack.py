@@ -7,7 +7,9 @@ from aws_cdk import (
     aws_cognito as cognito,
     aws_iam as iam,
     aws_lambda_event_sources as lambda_event_sources,
-    aws_sns as sns
+    aws_sns as sns,
+    aws_stepfunctions as sfn,
+    aws_stepfunctions_tasks as tasks
     )
 
 from aws_cdk.core import Stack
@@ -23,7 +25,7 @@ class FilmContentManagementStack(Stack):
         # Create S3 bucket with CORS configuration
         content_bucket = s3.Bucket(
             self,"ContentBucket",
-            bucket_name="content-bucket-cloud-film-app",
+            bucket_name="content-bucket-cloud-film-app-dusan",
             
             cors=[
                 s3.CorsRule(
@@ -269,13 +271,6 @@ class FilmContentManagementStack(Stack):
             description="A layer with FFmpeg"
         )
 
-        # Create Lambda Layer for Python dependencies
-        python_dependencies_layer = _lambda.LayerVersion(self, "PythonDependenciesLayer",
-            code=_lambda.AssetCode("lambda/layers/python"),
-            compatible_runtimes=[_lambda.Runtime.PYTHON_3_9],
-            description="A layer with Python dependencies"
-        )
-
         # Transcode Lambda function
         transcode_function = _lambda.Function(
             self, "TranscodeFunction",
@@ -283,10 +278,43 @@ class FilmContentManagementStack(Stack):
             handler="transcode_handler.handler",
             code=_lambda.Code.from_asset("transcoding_service"),
             timeout=core.Duration.minutes(15),
+            memory_size=3007,
             environment={
                 'CONTENT_BUCKET': content_bucket.bucket_name,
             },
-            layers= [ffmpeg_layer, python_dependencies_layer]
+            layers= [ffmpeg_layer]
+        )
+
+        # Create Step Function Task
+        transcode_task = tasks.LambdaInvoke(
+            self, "TranscodeTask",
+            lambda_function=transcode_function,
+            payload=sfn.TaskInput.from_object({
+                "film_id": sfn.JsonPath.string_at("$.film_id")
+            }),
+            result_path="$.transcode_result",
+            output_path="$.transcode_result",
+        ).add_retry(
+            max_attempts=3,
+            interval=core.Duration.seconds(30),
+            backoff_rate=2.0
+        )
+
+        state_machine = sfn.StateMachine(
+            self, "StateMachine",
+            definition=transcode_task,
+            timeout=core.Duration.minutes(30)
+        )
+
+        # Create API Lambda Function
+        step_function_transcoding = _lambda.Function(
+            self, "StepFunctionTranscoding",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="step_func_api_handler.handler",
+            code=_lambda.Code.from_asset("transcoding_service"),
+            environment={
+                'STATE_MACHINE_ARN': state_machine.state_machine_arn
+            }
         )
 
         update_film_function = _lambda.Function(
@@ -417,13 +445,16 @@ class FilmContentManagementStack(Stack):
         content_bucket.grant_read(search_film_function)
 
         content_bucket.grant_read(generate_feed_function)
-        content_bucket.grant_read_write(transcode_function)
 
         # Grant publish permissions to your transcode Lambda function
         sns_topic.grant_publish(create_film_function)
         sns_topic.grant_publish(notification_function)
 
-        
+        # Grant step function
+        content_bucket.grant_read_write(transcode_function)
+        state_machine.grant_start_execution(step_function_transcoding)
+        content_bucket.grant_read_write(step_function_transcoding)
+
 
         # grants dynamoDB
 
@@ -482,6 +513,7 @@ class FilmContentManagementStack(Stack):
         films.add_method("POST", apigateway.LambdaIntegration(create_film_function))
         films.add_method("GET", apigateway.LambdaIntegration(get_film_function))
 
+
         search = api.root.add_resource("search")
         search.add_method("GET", apigateway.LambdaIntegration(search_film_function))
 
@@ -489,6 +521,7 @@ class FilmContentManagementStack(Stack):
         film.add_method("PATCH", apigateway.LambdaIntegration(update_film_function))
         film.add_method("GET", apigateway.LambdaIntegration(get_film_function))
         film.add_method("DELETE", apigateway.LambdaIntegration(delete_film_function))
+        film.add_method("POST", apigateway.LambdaIntegration(step_function_transcoding))
 
         download = api.root.add_resource("download")
         download.add_method("GET", apigateway.LambdaIntegration(get_film_function))
@@ -546,4 +579,6 @@ class FilmContentManagementStack(Stack):
         core.CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
         core.CfnOutput(self, "UserPoolClientId", value=user_pool_client.user_pool_client_id)
         core.CfnOutput(self, "RegistrationLoginApiUrl", value=api.url)
+        core.CfnOutput(self, "StateMachineArn", value=state_machine.state_machine_arn)
+
 
