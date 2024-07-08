@@ -46,12 +46,23 @@ class FilmContentManagementStack(Stack):
             self, "MoviesTable",
             table_name="MovieTable",
             partition_key={"name": "film_id", "type": dynamodb.AttributeType.STRING},
-            removal_policy=RemovalPolicy.DESTROY,
-            read_capacity=1,
-            write_capacity=1,
-            stream=dynamodb.StreamViewType.NEW_IMAGE  # Enable streams
-
+            removal_policy=RemovalPolicy.DESTROY,  # Example policy, adjust as needed
+            read_capacity=1,  # Example capacity, adjust as needed
+            write_capacity=1,  # Example capacity, adjust as needed
+            stream=dynamodb.StreamViewType.NEW_IMAGE,  # Enable streams if needed
         )
+
+        # Add Global Secondary Index (GSI) for querying by title
+        movie_table.add_global_secondary_index(
+            index_name="TitleIndex",
+            partition_key=dynamodb.Attribute(
+                name="title",
+                type=dynamodb.AttributeType.STRING
+            ),
+            read_capacity=1,
+            write_capacity=1
+        )
+
 
         review_table = dynamodb.Table(
             self, "ReviewTable",
