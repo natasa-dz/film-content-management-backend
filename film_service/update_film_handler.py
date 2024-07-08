@@ -14,7 +14,7 @@ logger.setLevel(logging.INFO)
 def format_film_type(title, director, description, genre, actors):
     logger.info(f"Formatting film type with actors: {actors}")
     if isinstance(actors, list):
-        actors_str = ', '.join(actors)
+        actors_str = ' / '.join(actors) if len(actors) > 1 else actors[0]
     else:
         actors_str = actors
     return (
@@ -77,7 +77,8 @@ def handler(event, context):
             update_expression += "#year = :year, "
             expression_attribute_values[':year'] = year
         if actors:
-            actors_value = ', '.join(actors) if isinstance(actors, list) else actors
+            actors_value = ' / '.join(actors) if (isinstance(actors, list)
+                            and len(actors) > 1) else actors[0] if isinstance(actors, list) else actors
             update_expression += "#actors = :actors, "
             expression_attribute_values[':actors'] = actors_value
         if description:

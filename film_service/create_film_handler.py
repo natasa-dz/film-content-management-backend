@@ -40,7 +40,7 @@ def get_email_by_username(username):
 
 
 def generate_film_type(film_data):
-    actors = '|'.join(film_data.get('actors', []))  # Join actors with vertical bar separator
+    actors = ', '.join(film_data.get('actors', []))  # Join actors with comma separator
 
     film_type_data = (
         f"title: {film_data.get('title')} | "

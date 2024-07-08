@@ -2,7 +2,7 @@ import json
 import boto3
 import os
 import logging
-from boto3.dynamodb.conditions import Key, Attr
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from decimal import Decimal
 
@@ -23,14 +23,18 @@ class DecimalEncoder(json.JSONEncoder):
         return super(DecimalEncoder, self).default(obj)
 
 def format_movie_data(query_params):
+    # Split actors by comma and strip spaces
+    actors = query_params.get('actors', '')
+    formatted_actors = ', '.join(actor.strip() for actor in actors.split(','))
+
     formatted_data = (
         f"title: {query_params.get('title', '')} | "
         f"director: {query_params.get('director', '')} | "
         f"description: {query_params.get('description', '')} | "
         f"genre: {query_params.get('genre', '')} | "
-        f"actors: {query_params.get('actors', '')}"
+        f"actors: {formatted_actors}"
     )
-    return formatted_data
+    return formatted_data.lower()
 
 def handler(event, context):
     headers = {
@@ -46,7 +50,7 @@ def handler(event, context):
 
         response = table.query(
             IndexName='FilmTypeIndex',
-            KeyConditionExpression=Key('film_type').eq(film_type_string.lower()),
+            KeyConditionExpression=Key('film_type').eq(film_type_string),
         )
 
         items = response.get('Items', [])
