@@ -3,9 +3,7 @@ import os
 import base64
 import boto3
 import logging
-import subprocess
 from urllib.parse import unquote_plus
-
 
 s3 = boto3.client('s3')
 table_name = os.environ['METADATA_TABLE']
@@ -13,18 +11,17 @@ dynamodb = boto3.resource('dynamodb')
 bucket_name = os.environ['CONTENT_BUCKET']
 user_pool_id = os.environ['USER_POOL_ID']
 
-
-#notifications
+# Notifications
 sns = boto3.client('sns')
 subscriptions_table_name = os.environ['SUBSCRIPTIONS_TABLE']
 subscriptions_table = dynamodb.Table(subscriptions_table_name)
 sns_topic_arn = os.environ['SNS_TOPIC_ARN']
 
-
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 cognito = boto3.client('cognito-idp')
+
 
 def get_email_by_username(username):
     try:
@@ -41,15 +38,29 @@ def get_email_by_username(username):
         logger.error(f"Error retrieving email for user {username}: {str(e)}")
     return None
 
-def handler(event, context):
 
+def generate_film_type(film_data):
+    actors = '|'.join(film_data.get('actors', []))  # Join actors with vertical bar separator
+
+    film_type_data = (
+        f"title: {film_data.get('title')} | "
+        f"director: {film_data.get('director')} | "
+        f"description: {film_data.get('description')} | "
+        f"genre: {film_data.get('genre')} | "
+        f"actors: {actors}"
+    )
+
+    return film_type_data.lower()
+
+
+def handler(event, context):
     headers = {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',  # Or use 'http://localhost:4200'
         'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
         'Access-Control-Allow-Headers': 'Content-Type,Authorization'
     }
-    
+
     if event['httpMethod'] == 'OPTIONS':
         return {
             'statusCode': 200,
@@ -86,7 +97,8 @@ def handler(event, context):
             'year': year,
             'description': description,
             'actors': actors,
-            'genre': genre
+            'genre': genre,
+            'film_type': generate_film_type(body)  # Generate film_type based on all attributes
         })
 
         # Decode the file from base64
@@ -138,7 +150,7 @@ def handler(event, context):
             'body': json.dumps({'error': str(e)}),
             'headers': headers
         }
-    
+
 
 def notify_subscribers(title, actors, director, genre, description, year):
     try:
@@ -153,7 +165,7 @@ def notify_subscribers(title, actors, director, genre, description, year):
         for subscription in matching_subscriptions:
             username = subscription['user_id']
             email = get_email_by_username(username)
-            if email:                
+            if email:
                 sns.publish(
                     TopicArn=sns_topic_arn,
                     Subject="New Film Uploaded",
@@ -171,7 +183,7 @@ def notify_subscribers(title, actors, director, genre, description, year):
                             'StringValue': email
                         }
                     }
-                ) 
+                )
             else:
                 logger.error(f"Could not retrieve email for user {username}")
 

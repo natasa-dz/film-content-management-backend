@@ -52,11 +52,11 @@ class FilmContentManagementStack(Stack):
             stream=dynamodb.StreamViewType.NEW_IMAGE,  # Enable streams if needed
         )
 
-        # Add Global Secondary Index (GSI) for querying by title
+        # Add Global Secondary Index (GSI) for querying by film_type
         movie_table.add_global_secondary_index(
-            index_name="TitleIndex",
+            index_name="FilmTypeIndex",
             partition_key=dynamodb.Attribute(
-                name="title",
+                name="film_type",
                 type=dynamodb.AttributeType.STRING
             ),
             read_capacity=1,
