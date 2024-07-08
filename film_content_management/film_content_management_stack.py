@@ -1,5 +1,5 @@
+import aws_cdk
 from aws_cdk import (
-    core,
     aws_s3 as s3,
     aws_dynamodb as dynamodb,
     aws_lambda as _lambda,
@@ -13,8 +13,8 @@ from aws_cdk import (
     aws_sqs as sqs
     )
 
-from aws_cdk.core import Stack
-from aws_cdk.core import RemovalPolicy
+from aws_cdk import Stack
+from aws_cdk import RemovalPolicy
 
 from constructs import Construct
 
@@ -22,12 +22,14 @@ class FilmContentManagementStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
-        
+
         # Create S3 bucket with CORS configuration
         content_bucket = s3.Bucket(
             self,"ContentBucket",
-            bucket_name="content-bucket-cloud-film-app-dusan",
+           # bucket_name="content-bucket-cloud-film-app-dusan",
             
+            bucket_name="content-bucket-cloud-film-app",
+
             cors=[
                 s3.CorsRule(
                     allowed_methods=[
@@ -41,7 +43,7 @@ class FilmContentManagementStack(Stack):
                     allowed_headers=["*"]
                 )
             ],
-            removal_policy=RemovalPolicy.DESTROY   
+            removal_policy=RemovalPolicy.DESTROY
         )
 
         # DynamoDB creation
@@ -49,18 +51,38 @@ class FilmContentManagementStack(Stack):
             self, "MoviesTable",
             table_name="MovieTable",
             partition_key={"name": "film_id", "type": dynamodb.AttributeType.STRING},
-            removal_policy=RemovalPolicy.DESTROY,
-            read_capacity=1,
-            write_capacity=1,
-            stream=dynamodb.StreamViewType.NEW_IMAGE  # Enable streams
-
+            removal_policy=RemovalPolicy.DESTROY,  # Example policy, adjust as needed
+            read_capacity=1,  # Example capacity, adjust as needed
+            write_capacity=1,  # Example capacity, adjust as needed
+            stream=dynamodb.StreamViewType.NEW_IMAGE,  # Enable streams if needed
         )
+
+        # Add Global Secondary Index (GSI) for querying by film_type
+        movie_table.add_global_secondary_index(
+            index_name="FilmTypeIndex",
+            partition_key=dynamodb.Attribute(
+                name="film_type",
+                type=dynamodb.AttributeType.STRING
+            ),
+            read_capacity=1,
+            write_capacity=1
+        )
+
 
         review_table = dynamodb.Table(
             self, "ReviewTable",
             table_name="ReviewTable",
             partition_key={"name": "review_id", "type": dynamodb.AttributeType.STRING},
             removal_policy=RemovalPolicy.DESTROY,
+            read_capacity=1,
+            write_capacity=1
+        )
+        review_table.add_global_secondary_index(
+            index_name="ReviewTypeIndex",
+            partition_key=dynamodb.Attribute(
+                name="review_type",
+                type=dynamodb.AttributeType.STRING
+            ),
             read_capacity=1,
             write_capacity=1
         )
@@ -71,6 +93,15 @@ class FilmContentManagementStack(Stack):
             partition_key={"name": "user_id", "type": dynamodb.AttributeType.STRING},
             sort_key={"name": "subscription_type", "type": dynamodb.AttributeType.STRING},
             removal_policy=RemovalPolicy.DESTROY,
+            read_capacity=1,
+            write_capacity=1
+        )
+        subscription_table.add_global_secondary_index(
+            index_name="SubscriptionsTypeIndex",
+            partition_key=dynamodb.Attribute(
+                name="subscriptions_type",
+                type=dynamodb.AttributeType.STRING
+            ),
             read_capacity=1,
             write_capacity=1
         )
@@ -86,6 +117,15 @@ class FilmContentManagementStack(Stack):
             read_capacity=1,
             write_capacity=1
         )
+        user_feed_table.add_global_secondary_index(
+            index_name="UserFeedTypeIndex",
+            partition_key=dynamodb.Attribute(
+                name="user_feed_type",
+                type=dynamodb.AttributeType.STRING
+            ),
+            read_capacity=1,
+            write_capacity=1
+        )
 
         # Add the download history table
         download_history_table = dynamodb.Table(
@@ -94,6 +134,15 @@ class FilmContentManagementStack(Stack):
             partition_key={"name": "user_id", "type": dynamodb.AttributeType.STRING},
             sort_key={"name": "download_time", "type": dynamodb.AttributeType.STRING},
             removal_policy=RemovalPolicy.DESTROY,
+            read_capacity=1,
+            write_capacity=1
+        )
+        download_history_table.add_global_secondary_index(
+            index_name="DownloadTypeIndex",
+            partition_key=dynamodb.Attribute(
+                name="download_type",
+                type=dynamodb.AttributeType.STRING
+            ),
             read_capacity=1,
             write_capacity=1
         )
@@ -141,7 +190,7 @@ class FilmContentManagementStack(Stack):
                 "confirmation_status": cognito.StringAttribute(
                     min_len=1,
                     mutable=True
-                ), 
+                ),
                 'role': cognito.StringAttribute(min_len=1, max_len=20)
 
             }
@@ -227,7 +276,7 @@ class FilmContentManagementStack(Stack):
         registration_login_lambda = _lambda.Function(self, "RegistrationLoginHandler",
             runtime=_lambda.Runtime.PYTHON_3_8,
             handler="login_registration_handler.handler",
-            code=_lambda.Code.from_asset("cognito_service"), 
+            code=_lambda.Code.from_asset("cognito_service"),
             environment={
                 'USER_POOL_ID': user_pool.user_pool_id,
                 'USER_POOL_CLIENT_ID': user_pool_client.user_pool_client_id
@@ -239,7 +288,7 @@ class FilmContentManagementStack(Stack):
             self, "UserRoleFetchHandler",
             runtime=_lambda.Runtime.PYTHON_3_8,
             handler="get_user_role_handler.handler",
-            code=_lambda.Code.from_asset("cognito_service"), 
+            code=_lambda.Code.from_asset("cognito_service"),
             environment={
                 'USER_POOL_ID': user_pool.user_pool_id,
                 'USER_POOL_CLIENT_ID': user_pool_client.user_pool_client_id
@@ -272,7 +321,7 @@ class FilmContentManagementStack(Stack):
                 'FILM_UPLOAD_QUEUE_URL': film_upload_queue.queue_url
 
             },
-            timeout=core.Duration.seconds(900)  # Set timeout to 5 minutes (15 min = 900s maximum allowed)
+            timeout=aws_cdk.Duration.seconds(900)  # Set timeout to 5 minutes (15 min = 900s maximum allowed)
         )
 
         # Add policy to the Create Film Lambda function to allow sending messages to the SQS queue
@@ -464,7 +513,7 @@ class FilmContentManagementStack(Stack):
             environment={
                 'USER_FEED_TABLE':user_feed_table.table_name,
             }
-        )   
+        )
         # Lambda functions for subscription management
         create_subscription_function = _lambda.Function(
             self, "CreateSubscriptionFunction",
@@ -549,6 +598,7 @@ class FilmContentManagementStack(Stack):
 
         transcode_function.grant_invoke(create_film_function)
         download_history_table.grant_full_access(get_film_function)
+        download_history_table.grant_read_data(generate_feed_function)
 
         # ------------------ review service grants
         review_table.grant_read_data(generate_feed_function)
@@ -566,7 +616,7 @@ class FilmContentManagementStack(Stack):
             }
         )
 
-        #notify users about subscriptions 
+        #notify users about subscriptions
         subscription_table.grant_full_access(notification_function)
         # Grant permissions to subscription Lambda functions
         subscription_table.grant_full_access(create_subscription_function)
@@ -585,67 +635,170 @@ class FilmContentManagementStack(Stack):
 
 # ------------------- API METHODS
 
+        # Lambda funkcija za autorizaciju
+        auth_lambda_admin = _lambda.Function(
+            self, "AuthFunctionAdmin",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="authorization_admin.permission_handler",
+            code=_lambda.Code.from_asset("authorization"),
+            environment={
+                'USER_POOL_ID': user_pool.user_pool_id,
+            }
+        )
 
-# -------- movie service  
+        # Definisanje Lambda authorizera
+        authorizer_admin = apigateway.TokenAuthorizer(
+            self, "APIGatewayAuthorizerAdmin",
+            handler=auth_lambda_admin,
+            identity_source=apigateway.IdentitySource.header("Authorization")
+        )
+
+        # Lambda funkcija za autorizaciju
+        auth_lambda_user = _lambda.Function(
+            self, "AuthFunctionUser",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="authorization_user.permission_handler",
+            code=_lambda.Code.from_asset("authorization"),
+            environment={
+                'USER_POOL_ID': user_pool.user_pool_id,
+            }
+        )
+
+        # Definisanje Lambda authorizera
+        authorizer_user = apigateway.TokenAuthorizer(
+            self, "APIGatewayAuthorizerUser",
+            handler=auth_lambda_user,
+            identity_source=apigateway.IdentitySource.header("Authorization")
+        )
+
+        # Definisanje endpoint-a za kreiranje filma
         films = api.root.add_resource("films")
-        films.add_method("POST", apigateway.LambdaIntegration(create_film_function))
-        films.add_method("GET", apigateway.LambdaIntegration(get_film_function))
+        create_film_integration = apigateway.LambdaIntegration(create_film_function)
+        films.add_method(
+            "POST",
+            create_film_integration,
+            authorization_type=apigateway.AuthorizationType.CUSTOM,
+            authorizer=authorizer_admin
+        )
+
+        get_film_integration = apigateway.LambdaIntegration(get_film_function)
+        films.add_method(
+            "GET",
+            get_film_integration
+        )
 
 
         search = api.root.add_resource("search")
-        search.add_method("GET", apigateway.LambdaIntegration(search_film_function))
+        search_film_integration = apigateway.LambdaIntegration(search_film_function)
+        search.add_method(
+            "GET",
+            search_film_integration,
+            authorization_type=apigateway.AuthorizationType.CUSTOM,
+            authorizer=authorizer_user
+        )
 
         film = films.add_resource("{film_id}")
-        film.add_method("PATCH", apigateway.LambdaIntegration(update_film_function))
-        film.add_method("GET", apigateway.LambdaIntegration(get_film_function))
-        film.add_method("DELETE", apigateway.LambdaIntegration(delete_film_function))
         film.add_method("POST", apigateway.LambdaIntegration(step_function_transcoding))
 
         transcode_status = api.root.add_resource("status")
         transcode_status = transcode_status.add_resource("{executionArn}")
         transcode_status.add_method("GET", apigateway.LambdaIntegration(status_check_function))
+        
+        update_film_integration = apigateway.LambdaIntegration(update_film_function)
+        film.add_method(
+            "PATCH",
+            update_film_integration,
+            authorization_type=apigateway.AuthorizationType.CUSTOM,
+            authorizer=authorizer_admin
+        )
+
+        get_film_integration = apigateway.LambdaIntegration(get_film_function)
+        film.add_method(
+            "GET",
+            get_film_integration
+        )
+
+        delete_film_integration = apigateway.LambdaIntegration(delete_film_function)
+        film.add_method(
+            "DELETE",
+            delete_film_integration,
+            authorization_type=apigateway.AuthorizationType.CUSTOM,
+            authorizer=authorizer_admin
+        )
 
         download = api.root.add_resource("download")
-        download.add_method("GET", apigateway.LambdaIntegration(get_film_function))
-
+        download_integration = apigateway.LambdaIntegration(get_film_function)
+        download.add_method(
+            "GET",
+            download_integration,
+            authorization_type = apigateway.AuthorizationType.CUSTOM,
+            authorizer = authorizer_user
+        )
 # ----------- cognito
-
         confirm_resource = api.root.add_resource("confirm")
-        confirm_resource.add_method("POST", apigateway.LambdaIntegration(registration_login_lambda))
-
+        confirm_integration = apigateway.LambdaIntegration(registration_login_lambda)
+        confirm_resource.add_method(
+            "POST",
+            confirm_integration
+        )
 
         register = api.root.add_resource("register")
         register_integration = apigateway.LambdaIntegration(registration_login_lambda)
-        register.add_method("POST", register_integration)
+        register.add_method(
+            "POST",
+            register_integration
+        )
 
         login = api.root.add_resource("login")
         login_integration = apigateway.LambdaIntegration(registration_login_lambda)
-        login.add_method("POST", login_integration)
+        login.add_method("POST",
+                         login_integration
+        )
 
         fetch_role=api.root.add_resource("fetch-role")
         fetch_role_integration = apigateway.LambdaIntegration(user_role_fetch_lambda)
-        fetch_role.add_method('GET', fetch_role_integration); 
+        fetch_role.add_method('GET'
+                              , fetch_role_integration)
 
-
-#------------ subscriptions 
 
         subscriptions = api.root.add_resource("subscriptions")
-
-        subscriptions.add_method("POST", apigateway.LambdaIntegration(create_subscription_function))
-        subscriptions.add_method("GET", apigateway.LambdaIntegration(list_subscriptions_function))
-        subscriptions.add_method("DELETE", apigateway.LambdaIntegration(delete_subscription_function))
+        subscriptions.add_method("POST"
+                                 ,apigateway.LambdaIntegration(create_subscription_function),
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user
+                                 )
+        subscriptions.add_method("GET",
+                                 apigateway.LambdaIntegration(list_subscriptions_function),
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user)
+        subscriptions.add_method("DELETE",
+                                 apigateway.LambdaIntegration(delete_subscription_function),
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user)
 
 
 # ----------- reviews
         reviews = film.add_resource("reviews")
-        reviews.add_method("POST", apigateway.LambdaIntegration(review_function))
+        reviews.add_method("POST",
+                           apigateway.LambdaIntegration(review_function),
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user)
 
 # ----------- feed
         generate_feed = api.root.add_resource("generate-feed")
-        generate_feed.add_method("POST", apigateway.LambdaIntegration(generate_feed_function))
+
+        generate_feed.add_method("POST",
+                                 apigateway.LambdaIntegration(generate_feed_function),
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user)
+
 
         get_feed = api.root.add_resource("get-feed")
-        get_feed.add_method("GET", apigateway.LambdaIntegration(get_feed_function))
+        get_feed.add_method("GET",
+                            apigateway.LambdaIntegration(get_feed_function),
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user)
+
 
 
     
@@ -660,5 +813,4 @@ class FilmContentManagementStack(Stack):
         core.CfnOutput(self, "UserPoolClientId", value=user_pool_client.user_pool_client_id)
         core.CfnOutput(self, "RegistrationLoginApiUrl", value=api.url)
         core.CfnOutput(self, "StateMachineArn", value=state_machine.state_machine_arn)
-
 

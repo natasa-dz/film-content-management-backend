@@ -40,7 +40,7 @@ def handler(event, context):
         film_id = event['queryStringParameters'].get('film_id') if event.get('queryStringParameters') else None
         user_id = event['queryStringParameters'].get('user_id') if event.get('queryStringParameters') else None
 
-        if film_id and user_id:
+        if film_id:
             response = table.get_item(Key={'film_id': film_id})
             item = response.get('Item', {})
 
@@ -61,11 +61,12 @@ def handler(event, context):
                 item['file'] = file_base64
 
                 # Log the download history
-                download_history_table.put_item(Item={
-                    'user_id': user_id,
-                    'film_id': film_id,
-                    'download_time': datetime.now(timezone.utc).isoformat()
-                })
+                if(user_id):
+                    download_history_table.put_item(Item={
+                        'user_id': user_id,
+                        'film_id': film_id,
+                        'download_time': datetime.now(timezone.utc).isoformat()
+                    })
 
                 return {
                     'statusCode': 200,

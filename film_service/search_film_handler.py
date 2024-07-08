@@ -2,16 +2,10 @@ import json
 import boto3
 import os
 import logging
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from decimal import Decimal
 
-class DecimalEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super(DecimalEncoder, self).default(obj)
-    
 # Initialize AWS resources
 dynamodb = boto3.resource('dynamodb')
 table_name = os.environ.get('METADATA_TABLE')
@@ -22,6 +16,26 @@ bucket_name = os.environ.get('CONTENT_BUCKET')
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super(DecimalEncoder, self).default(obj)
+
+def format_movie_data(query_params):
+    # Split actors by comma and strip spaces
+    actors = query_params.get('actors', '')
+    formatted_actors = ', '.join(actor.strip() for actor in actors.split(','))
+
+    formatted_data = (
+        f"title: {query_params.get('title', '')} | "
+        f"director: {query_params.get('director', '')} | "
+        f"description: {query_params.get('description', '')} | "
+        f"genre: {query_params.get('genre', '')} | "
+        f"actors: {formatted_actors}"
+    )
+    return formatted_data.lower()
+
 def handler(event, context):
     headers = {
         'Content-Type': 'application/json',
@@ -31,33 +45,15 @@ def handler(event, context):
     }
 
     try:
-        # Extract query parameters
         query_params = event.get('queryStringParameters', {})
+        film_type_string = format_movie_data(query_params)
 
-        # Construct filter expression
-        filter_expression = None
-        filters = ['title', 'description', 'actors', 'director', 'genre']
-
-        for key in filters:
-            if key in query_params:
-                if filter_expression:
-                    filter_expression &= Attr(key).contains(query_params[key])
-                else:
-                    filter_expression = Attr(key).contains(query_params[key])
-
-        if filter_expression:
-            response = table.scan(FilterExpression=filter_expression)
-        else:
-            response = table.scan()
+        response = table.query(
+            IndexName='FilmTypeIndex',
+            KeyConditionExpression=Key('film_type').eq(film_type_string),
+        )
 
         items = response.get('Items', [])
-
-        while 'LastEvaluatedKey' in response:
-            response = table.scan(
-                FilterExpression=filter_expression,
-                ExclusiveStartKey=response['LastEvaluatedKey']
-            )
-            items.extend(response.get('Items', []))
 
         return {
             'statusCode': 200,

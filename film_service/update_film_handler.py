@@ -11,16 +11,33 @@ bucket_name = os.environ['CONTENT_BUCKET']
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+def format_film_type(title, director, description, genre, actors):
+    logger.info(f"Formatting film type with actors: {actors}")
+    if isinstance(actors, list):
+        actors_str = ' / '.join(actors) if len(actors) > 1 else actors[0]
+    else:
+        actors_str = actors
+    return (
+        f"title: {title or ''} | "
+        f"director: {director or ''} | "
+        f"description: {description or ''} | "
+        f"genre: {genre or ''} | "
+        f"actors: {actors_str}"
+    )
+
 def handler(event, context):
     try:
         # Parse request body
         body = json.loads(event['body'])
+        logger.info(f"Request body: {body}")
+
         film_id = body.get('film_id')
         title = body.get('title')
         director = body.get('director')
         year = body.get('year')
         actors = body.get('actors')
         description = body.get('description')
+        genre = body.get('genre')
         file_base64 = body.get('file')
 
         headers = {
@@ -31,12 +48,19 @@ def handler(event, context):
         }
 
         # Validate required fields
-        if not (film_id and (title or director or year or actors or description or file_base64)):
+        if not (film_id and (title or director or year or actors or description or genre or file_base64)):
+            logger.error("Missing required fields")
             return {
                 'statusCode': 400,
                 'body': json.dumps({'error': 'Missing required fields'}),
                 'headers': headers
             }
+
+        # Log actors type
+        logger.info(f"Type of actors before formatting: {type(actors)}")
+
+        # Format film_type
+        film_type = format_film_type(title, director, description, genre, actors)
 
         # Update film data in DynamoDB
         table = dynamodb.Table(table_name)
@@ -53,32 +77,39 @@ def handler(event, context):
             update_expression += "#year = :year, "
             expression_attribute_values[':year'] = year
         if actors:
+            actors_value = ' / '.join(actors) if (isinstance(actors, list)
+                            and len(actors) > 1) else actors[0] if isinstance(actors, list) else actors
             update_expression += "#actors = :actors, "
-            expression_attribute_values[':actors'] = actors
+            expression_attribute_values[':actors'] = actors_value
         if description:
             update_expression += "#description = :description, "
             expression_attribute_values[':description'] = description
+        if genre:
+            update_expression += "#genre = :genre, "
+            expression_attribute_values[':genre'] = genre
 
-        update_expression = update_expression.rstrip(", ")
+        update_expression += "#film_type = :film_type"
+        expression_attribute_values[':film_type'] = film_type.lower()
+
+        expression_attribute_names = {
+            "#title": "title",
+            "#director": "director",
+            "#year": "year",
+            "#actors": "actors",
+            "#description": "description",
+            "#genre": "genre",
+            "#film_type": "film_type"
+        }
 
         try:
-            if update_expression != "SET ":  # Ensure at least one field to update
-                table.update_item(
-                    Key={'film_id': film_id},
-                    UpdateExpression=update_expression,
-                    ExpressionAttributeValues=expression_attribute_values,
-                    ExpressionAttributeNames={
-                        "#title": "title",
-                        "#director": "director",
-                        "#year": "year",
-                        "#actors": "actors",
-                        "#description": "description"
-                    },
-                    ReturnValues="UPDATED_NEW"
-                )
-                logger.info(f"Film with ID {film_id} updated successfully")
-            else:
-                logger.warning(f"No fields provided to update for film ID {film_id}")
+            table.update_item(
+                Key={'film_id': film_id},
+                UpdateExpression=update_expression,
+                ExpressionAttributeValues=expression_attribute_values,
+                ExpressionAttributeNames=expression_attribute_names,
+                ReturnValues="UPDATED_NEW"
+            )
+            logger.info(f"Film with ID {film_id} updated successfully")
 
         except Exception as e:
             logger.error(f"Error updating film with ID {film_id}: {str(e)}")
