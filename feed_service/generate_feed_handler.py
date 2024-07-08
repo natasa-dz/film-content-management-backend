@@ -1,6 +1,8 @@
 import boto3
 import json
+from boto3.dynamodb.conditions import Attr
 from boto3.dynamodb.conditions import Key
+
 import os
 
 dynamodb = boto3.resource('dynamodb')
@@ -10,10 +12,9 @@ user_subscriptions_table = dynamodb.Table(os.environ['SUBSCRIPTIONS_TABLE'])
 user_feed_table = dynamodb.Table(os.environ['USER_FEED_TABLE'])  # Assuming you have set USER_FEED_TABLE in environment
 user_downloads_table = dynamodb.Table(os.environ['USER_DOWNLOADS_TABLE'])
 
-
 def get_user_ratings(user_id):
-    response = user_ratings_table.query(
-        KeyConditionExpression=Key('user_id').eq(user_id)
+    response = user_ratings_table.scan(
+        FilterExpression=Attr('user_id').eq(user_id)
     )
     return response.get('Items', [])
 
@@ -37,7 +38,7 @@ def calculate_score(film, user_ratings, user_subscriptions, user_downloads):
     for rating in user_ratings:
         if rating['film_id'] == film['film_id']:
             rating_type = rating.get('rating_type')
-            rating_value = rating.get('rating_value')
+            rating_value = rating.get('rating')
 
             if rating_type == 'numeric':
                 if rating_value > 2:  
@@ -66,7 +67,7 @@ def calculate_score(film, user_ratings, user_subscriptions, user_downloads):
     return score
 
 def handler(event, context):
-    user_id = event['pathParameters']['user_id']
+    user_id = event['queryStringParameters']['user_id']
 
     # Fetch user data
     user_ratings = get_user_ratings(user_id)
@@ -88,7 +89,7 @@ def handler(event, context):
     scored_films.sort(key=lambda x: x['score'], reverse=True)
 
     # Return top 10 films
-    feed = []
+    #feed = []
     for film in scored_films[:10]:
         film_info = {
             'film_id': film['film']['film_id'],
@@ -100,7 +101,7 @@ def handler(event, context):
             'genre': film['film']['genre'],
             'score': film['score']
         }
-        feed.append(film_info)
+        #feed.append(film_info)
         
         # Update user feed table
         user_feed_table.put_item(Item={
@@ -118,9 +119,8 @@ def handler(event, context):
 
     return {
         'statusCode': 200,
-        'body': json.dumps(feed),
+        'body': json.dumps({'message': 'Feed updated successfully'}),
         'headers': {
-            'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
             'Access-Control-Allow-Headers': 'Content-Type,Authorization'

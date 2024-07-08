@@ -471,6 +471,7 @@ class FilmContentManagementStack(Stack):
 
         transcode_function.grant_invoke(create_film_function)
         download_history_table.grant_full_access(get_film_function)
+        download_history_table.grant_read_data(generate_feed_function)
 
         # ------------------ review service grants
         review_table.grant_read_data(generate_feed_function)
@@ -500,6 +501,9 @@ class FilmContentManagementStack(Stack):
         # feed grants
         user_feed_table.grant_full_access(generate_feed_function)
         user_feed_table.grant_read_data(get_feed_function)
+        user_feed_table.grant_read_write_data(create_subscription_function)
+        user_feed_table.grant_read_write_data(get_film_function)
+        user_feed_table.grant_read_write_data(review_function)
 
 
 # ------------------- API METHODS
@@ -623,7 +627,6 @@ class FilmContentManagementStack(Stack):
                               , fetch_role_integration)
 
 
-#------------ subscriptions
         subscriptions = api.root.add_resource("subscriptions")
         subscriptions.add_method("POST"
                                  ,apigateway.LambdaIntegration(create_subscription_function),
@@ -649,10 +652,12 @@ class FilmContentManagementStack(Stack):
 
 # ----------- feed
         generate_feed = api.root.add_resource("generate-feed")
-        generate_feed.add_method("GET",
+
+        generate_feed.add_method("POST",
                                  apigateway.LambdaIntegration(generate_feed_function),
                                  authorization_type=apigateway.AuthorizationType.CUSTOM,
                                  authorizer=authorizer_user)
+
 
         get_feed = api.root.add_resource("get-feed")
         get_feed.add_method("GET",
