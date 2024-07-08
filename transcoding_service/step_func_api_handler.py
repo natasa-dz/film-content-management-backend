@@ -7,7 +7,7 @@ import time
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-client = boto3.client('stepfunctions')
+sfn_client = boto3.client('stepfunctions')
 
 def handler(event, context):
 
@@ -18,23 +18,32 @@ def handler(event, context):
         'Access-Control-Allow-Headers': 'Content-Type,Authorization'
     }
 
-    if event['httpMethod'] == 'OPTIONS':
-        return {
-            'statusCode': 200,
-            'headers': headers,
-            'body': json.dumps('CORS preflight check passed')
-        }
+    # if event['httpMethod'] == 'OPTIONS':
+    #     return {
+    #         'statusCode': 200,
+    #         'headers': headers,
+    #         'body': json.dumps('CORS preflight check passed')
+    #     }
     
     logger.info(f"Received event: {event}")
+    
+      # Process each record in the SQS message
+    for record in event['Records']:
+        logger.info("FOR ZA RECORDS SQSA POKRENUT")
+        # Extract the message body
+        message_body = json.loads(record['body'])
+
+        film_id = message_body['film_id']
+
 
     state_machine_arn = os.environ['STATE_MACHINE_ARN']
     logger.info(f"STATE_MACHINE_ARN: {state_machine_arn}")
-    film_id = event['pathParameters']['film_id']
-    logger.info(f"FILM_ID: {film_id}")
+    # film_id = event['pathParameters']['film_id']
+    # logger.info(f"FILM_ID: {film_id}")
     
     try:
         logger.info("STARTING STEP FUNCTION EXECUTION")
-        response = client.start_execution(
+        response = sfn_client.start_execution(
             stateMachineArn=state_machine_arn,
             input=json.dumps({
                 "film_id": film_id

@@ -9,7 +9,8 @@ from aws_cdk import (
     aws_lambda_event_sources as lambda_event_sources,
     aws_sns as sns,
     aws_stepfunctions as sfn,
-    aws_stepfunctions_tasks as tasks
+    aws_stepfunctions_tasks as tasks,
+    aws_sqs as sqs
     )
 
 from aws_cdk.core import Stack
@@ -245,6 +246,16 @@ class FilmContentManagementStack(Stack):
             }
         )
 
+
+        # Create an SQS queue
+        film_upload_queue = sqs.Queue(
+            self, "FilmUploadQueue",
+            visibility_timeout=core.Duration.seconds(900)
+        )
+
+        # Create an event source mapping for the Lambda function
+        sqs_event_source = lambda_event_sources.SqsEventSource(film_upload_queue)
+
         # Lambda functions for CREATE, UPDATE, and GET
         create_film_function = _lambda.Function(
             self, "CreateFilmFunction",
@@ -257,10 +268,23 @@ class FilmContentManagementStack(Stack):
                 'USER_POOL_ID': user_pool.user_pool_id,
                 'USER_POOL_CLIENT_ID': user_pool_client.user_pool_client_id,
                 'SUBSCRIPTIONS_TABLE': subscription_table.table_name,
-                'SNS_TOPIC_ARN': sns_topic.topic_arn  # Add SNS topic ARN as environment variable
+                'SNS_TOPIC_ARN': sns_topic.topic_arn,  # Add SNS topic ARN as environment variable,
+                'FILM_UPLOAD_QUEUE_URL': film_upload_queue.queue_url
 
             },
             timeout=core.Duration.seconds(900)  # Set timeout to 5 minutes (15 min = 900s maximum allowed)
+        )
+
+        # Add policy to the Create Film Lambda function to allow sending messages to the SQS queue
+        create_film_function.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "sqs:SendMessage"
+                ],
+                resources=[
+                    film_upload_queue.queue_arn
+                ]
+            )
         )
 
         #Transcode Lambda layer with FFmpeg
@@ -331,6 +355,9 @@ class FilmContentManagementStack(Stack):
             },
             timeout=core.Duration.minutes(15)
         )
+
+        #add so this step_function_transcoding is triggered by adding message to sqs queue
+        step_function_transcoding.add_event_source(sqs_event_source)
 
         # Add policy to the API Lambda function to allow starting and describing executions
         step_function_transcoding.add_to_role_policy(
