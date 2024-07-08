@@ -72,6 +72,15 @@ class FilmContentManagementStack(Stack):
             read_capacity=1,
             write_capacity=1
         )
+        review_table.add_global_secondary_index(
+            index_name="ReviewTypeIndex",
+            partition_key=dynamodb.Attribute(
+                name="review_type",
+                type=dynamodb.AttributeType.STRING
+            ),
+            read_capacity=1,
+            write_capacity=1
+        )
 
         subscription_table = dynamodb.Table(
             self, "SubscriptionsTable",
@@ -79,6 +88,15 @@ class FilmContentManagementStack(Stack):
             partition_key={"name": "user_id", "type": dynamodb.AttributeType.STRING},
             sort_key={"name": "subscription_type", "type": dynamodb.AttributeType.STRING},
             removal_policy=RemovalPolicy.DESTROY,
+            read_capacity=1,
+            write_capacity=1
+        )
+        subscription_table.add_global_secondary_index(
+            index_name="SubscriptionsTypeIndex",
+            partition_key=dynamodb.Attribute(
+                name="subscriptions_type",
+                type=dynamodb.AttributeType.STRING
+            ),
             read_capacity=1,
             write_capacity=1
         )
@@ -94,6 +112,15 @@ class FilmContentManagementStack(Stack):
             read_capacity=1,
             write_capacity=1
         )
+        user_feed_table.add_global_secondary_index(
+            index_name="UserFeedTypeIndex",
+            partition_key=dynamodb.Attribute(
+                name="user_feed_type",
+                type=dynamodb.AttributeType.STRING
+            ),
+            read_capacity=1,
+            write_capacity=1
+        )
 
         # Add the download history table
         download_history_table = dynamodb.Table(
@@ -102,6 +129,15 @@ class FilmContentManagementStack(Stack):
             partition_key={"name": "user_id", "type": dynamodb.AttributeType.STRING},
             sort_key={"name": "download_time", "type": dynamodb.AttributeType.STRING},
             removal_policy=RemovalPolicy.DESTROY,
+            read_capacity=1,
+            write_capacity=1
+        )
+        download_history_table.add_global_secondary_index(
+            index_name="DownloadTypeIndex",
+            partition_key=dynamodb.Attribute(
+                name="download_type",
+                type=dynamodb.AttributeType.STRING
+            ),
             read_capacity=1,
             write_capacity=1
         )
