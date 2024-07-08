@@ -264,7 +264,7 @@ class FilmContentManagementStack(Stack):
         )
 
         #Transcode Lambda layer with FFmpeg
-          # Create Lambda Layer
+        # Create Lambda Layer
         ffmpeg_layer = _lambda.LayerVersion(self, "FFmpegLayer",
             code=_lambda.AssetCode("lambda/layers/ffmpeg"),
             compatible_runtimes=[_lambda.Runtime.PYTHON_3_9],
@@ -285,6 +285,14 @@ class FilmContentManagementStack(Stack):
             layers= [ffmpeg_layer]
         )
 
+        # Add policy to the lambda function to allow describing executions
+        transcode_function.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["states:DescribeExecution"],
+                resources=["arn:aws:states:{}:{}:execution:*:*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID)]
+            )
+        )
+
         # Create Step Function Task
         transcode_task = tasks.LambdaInvoke(
             self, "TranscodeTask",
@@ -294,10 +302,16 @@ class FilmContentManagementStack(Stack):
             }),
             result_path="$.transcode_result",
             output_path="$.transcode_result",
+            timeout=core.Duration.minutes(30)
         ).add_retry(
             max_attempts=3,
             interval=core.Duration.seconds(30),
             backoff_rate=2.0
+        ).add_catch(
+            sfn.Fail(self, "Failed", error="TranscodingFailed", cause="Transcoding failed after three atempts"),
+            errors=["States.ALL"]
+        ).next(
+            sfn.Succeed(self, "Succeeded")
         )
 
         state_machine = sfn.StateMachine(
@@ -314,8 +328,45 @@ class FilmContentManagementStack(Stack):
             code=_lambda.Code.from_asset("transcoding_service"),
             environment={
                 'STATE_MACHINE_ARN': state_machine.state_machine_arn
-            }
+            },
+            timeout=core.Duration.minutes(15)
         )
+
+        # Add policy to the API Lambda function to allow starting and describing executions
+        step_function_transcoding.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "states:StartExecution",
+                    "states:DescribeExecution"
+                ],
+                resources=[
+                    state_machine.state_machine_arn,
+                    "arn:aws:states:{}:{}:execution:*:*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID)
+
+                ]
+            )
+        )
+
+          # Lambda function to check the execution status
+        status_check_function = _lambda.Function(
+            self, "StatusCheckFunction",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="poll_step_func.handler",
+            code=_lambda.Code.from_asset("transcoding_service"),
+            environment={
+                'STATE_MACHINE_ARN': state_machine.state_machine_arn
+            },
+            timeout=core.Duration.minutes(10)
+        )
+
+          # Add policy to the lambda function to allow describing executions
+        status_check_function.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["states:DescribeExecution"],
+                resources=["arn:aws:states:{}:{}:execution:*:*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID)]
+            )
+        )
+
 
         update_film_function = _lambda.Function(
             self, "UpdateFilmFunction",
@@ -523,6 +574,10 @@ class FilmContentManagementStack(Stack):
         film.add_method("DELETE", apigateway.LambdaIntegration(delete_film_function))
         film.add_method("POST", apigateway.LambdaIntegration(step_function_transcoding))
 
+        transcode_status = api.root.add_resource("status")
+        transcode_status = transcode_status.add_resource("{executionArn}")
+        transcode_status.add_method("GET", apigateway.LambdaIntegration(status_check_function))
+
         download = api.root.add_resource("download")
         download.add_method("GET", apigateway.LambdaIntegration(get_film_function))
 
@@ -565,10 +620,8 @@ class FilmContentManagementStack(Stack):
         get_feed = api.root.add_resource("get-feed")
         get_feed.add_method("GET", apigateway.LambdaIntegration(get_feed_function))
 
-# ----------- transcoding
-        transcoder=films.add_resource("transcode")  
-        transcoder.add_method("POST", apigateway.LambdaIntegration(transcode_function))
-  
+
+    
 
     # Outputs
         core.CfnOutput(self, "ContentBucketName", value=content_bucket.bucket_name)

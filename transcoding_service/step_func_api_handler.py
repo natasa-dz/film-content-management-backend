@@ -2,6 +2,7 @@ import json
 import boto3
 import os
 import logging
+import time
 
 
 logger = logging.getLogger()
@@ -39,24 +40,26 @@ def handler(event, context):
                 "film_id": film_id
             })
         )
+        execution_arn = response['executionArn']
 
-        
-
+        logger.info(f"execution arn that returns: {execution_arn}")
+            
+            
         return {
             'statusCode': 200,
+            "headers": headers,
             'body': json.dumps({
                 'message': 'Step Function execution started',
-                'executionArn': response['executionArn']
-            }),
-            "headers": headers
+                'executionArn': execution_arn
+            })
         }
     except Exception as e:
         logger.error(f"Error on starting of step function: {e}")
         return {
             'statusCode': 500,
+            'headers': headers,
             'body': json.dumps({
                 'message': 'Error starting Step Function execution',
                 'error': str(e)
-            }),
-            'headers': headers
+            })
         }

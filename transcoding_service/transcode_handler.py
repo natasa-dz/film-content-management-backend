@@ -33,11 +33,11 @@ def handler(event, context):
 
 
         film_id = event.get('film_id')
-        
 
         if not film_id:
             raise ValueError("Missing film_id in request body")
 
+        # raise Exception("ERROR TEST 3 TIMES AND BAD STATUS RETURN TO CLIENT")
         # Download the original file
         input_file = f"/tmp/{os.path.basename(film_id)}"
         if not check_file_exists_tmp(input_file):
@@ -60,20 +60,28 @@ def handler(event, context):
         if not check_file_exists_s3(bucket, key_480):
             logger.info(f"Transcoding to 480p")
             transcode_and_upload(input_file, bucket, key_480, "854:480")
+        
+        # return {
+        #     'statusCode': 200,
+        #     'headers': headers,
+        #     'body': json.dumps({
+        #         'message': 'Transcoding and upload successful',
+        #         'film_id': film_id
+        #     })
+        # }
 
     except Exception as e:
         logger.error(f"Error transcoding or uploading: {e}")
+        # return {
+        #     'statusCode': 500,
+        #     'headers': headers,
+        #     'body': json.dumps({
+        #         'message': 'Error during transcoding',
+        #         'error': str(e)
+        #     })
+        # }
         raise e
     
-
-#--------------------------GENERALNO RETURN IZ OVOG FAJLA NE RADI NISTA FRONTU ALI APSOLUTNO NE STIGNE DO NJEGA ON UOPSTE NIJE SUBSCRIBOVAN NA OVO, NAMA TREBA DA MI OVO VRATIMO ZA STEP FJU PA DA ONA OBAVESTI
-# FRONT O CEMU TREBA DA GA OBAVESTI AL AJDE PRVO DA PRORADI TRANSCODING PA CU DA VIDIM STA DALJE
-    # return {
-    #     'statusCode': 200,
-    #     'body': json.dumps({'message': 'Transcoding and upload successful'}),
-    #     'headers': headers
-    # }
-
 
 def transcode_and_upload(input_file, bucket, output_key, resolution_interval):
     output_path = f"/tmp/{output_key}"
@@ -85,8 +93,6 @@ def transcode_and_upload(input_file, bucket, output_key, resolution_interval):
         raise e
 
 def transcode_video(input_path, output_path, resolution):
-    # Ensure output path has correct extension
-
     ffmpeg_cmd = [
         '/opt/bin/ffmpeg', '-y',
         '-i', input_path,
