@@ -3,6 +3,8 @@ import os
 import boto3
 import subprocess
 import logging
+from botocore.exceptions import ClientError
+
 
 s3 = boto3.client('s3')
 logger = logging.getLogger()
@@ -22,52 +24,86 @@ def handler(event, context):
         'Access-Control-Allow-Headers': 'Content-Type,Authorization'
     }
 
-    if event['httpMethod'] == 'OPTIONS':
-        return {
-            'statusCode': 200,
-            'headers': headers,
-            'body': json.dumps('CORS preflight check passed')
-        }
 
     logger.info(f"Received event: {event}")
 
     try:
         bucket = os.environ['CONTENT_BUCKET'] 
+        logger.info(f"CONTENT_BUCKET: {bucket}")
 
-        if isinstance(event['body'], str):
-            event_body = json.loads(event['body'])
-        else:
-            event_body = event['body']
 
-        film_id = event_body.get('film_id')
-        resolutions = event_body.get('resolutions')
+        film_id = event.get('film_id')
 
         if not film_id:
             raise ValueError("Missing film_id in request body")
- 
 
         # Download the original file
         input_file = f"/tmp/{os.path.basename(film_id)}"
-        s3.download_file(bucket, film_id, input_file)
+        if not check_file_exists_tmp(input_file):
+            logger.info(f"Downloading file from S3: {film_id}")
+            s3.download_file(bucket, film_id, input_file)
 
-        # Transcode to different resolutions
-        for resolution in resolutions:
-            width = resolution.split('p')[0]
-            output_key = f"{film_id}_{resolution}.mp4"  # Use film_id in the output key
-            output_file = f"/tmp/{film_id}_{resolution}.mp4"
+        key_360 = f"{film_id}_360p.mp4"
+        key_720 = f"{film_id}_720p.mp4"
+        key_480 = f"{film_id}_480p.mp4"
 
-            subprocess.run(['ffmpeg', '-i', input_file, '-vf', f"scale={width}:-1", output_file], check=True)
 
-            # Upload transcoded file back to S3
-            s3.upload_file(output_file, bucket, output_key)
-            logger.info(f"Uploaded {resolution} version to S3: {bucket}/{output_key}")
+        if not check_file_exists_s3(bucket, key_360):
+            logger.info(f"Transcoding to 360p")
+            transcode_and_upload(input_file, bucket, key_360, "640:360")
+
+        if not check_file_exists_s3(bucket, key_720):
+            logger.info(f"Transcoding to 720p")
+            transcode_and_upload(input_file, bucket, key_720, "1280:720")
+
+        if not check_file_exists_s3(bucket, key_480):
+            logger.info(f"Transcoding to 480p")
+            transcode_and_upload(input_file, bucket, key_480, "854:480")
+        
 
     except Exception as e:
         logger.error(f"Error transcoding or uploading: {e}")
-        raise
+        raise e
+    
 
-    return {
-        'statusCode': 200,
-        'body': json.dumps({'message': 'Transcoding and upload successful'}),
-        'headers': headers
-    }
+def transcode_and_upload(input_file, bucket, output_key, resolution_interval):
+    output_path = f"/tmp/{output_key}"
+    transcode_video(input_file, output_path, resolution_interval)
+    logger.info(f"Uploading transcoded file to S3: {output_key}")
+    try:
+        s3.upload_file(output_path, bucket, output_key)
+    except Exception as e:
+        raise e
+
+def transcode_video(input_path, output_path, resolution):
+    ffmpeg_cmd = [
+        '/opt/bin/ffmpeg', '-y',
+        '-i', input_path,
+        '-vf', f'scale={resolution}',
+        '-preset', 'ultrafast',
+        '-crf', '23', 
+        '-c:a', 'copy',
+        output_path
+    ]
+
+    try:
+        logger.info(f"Running ffmpeg command: {' '.join(ffmpeg_cmd)}")
+        subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
+
+    except Exception as e:
+        logger.error(f"Error in transcode_video(): {e}")
+        logger.error(f"ffmpeg output: {e.stdout.decode('utf-8')}")
+        logger.error(f"ffmpeg error: {e.stderr.decode('utf-8')}")
+        raise e
+
+def check_file_exists_s3(bucket_name, file_key):
+    try:
+        s3.head_object(Bucket=bucket_name, Key=file_key)
+        return True
+    except ClientError as e:
+        return False
+    
+def check_file_exists_tmp(file_path):
+    if os.path.exists(file_path):
+        return True
+    return False

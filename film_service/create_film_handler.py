@@ -13,6 +13,7 @@ user_pool_id = os.environ['USER_POOL_ID']
 
 # Notifications
 sns = boto3.client('sns')
+sqs_client = boto3.client('sqs')
 subscriptions_table_name = os.environ['SUBSCRIPTIONS_TABLE']
 subscriptions_table = dynamodb.Table(subscriptions_table_name)
 sns_topic_arn = os.environ['SNS_TOPIC_ARN']
@@ -125,6 +126,13 @@ def handler(event, context):
         try:
             s3.put_object(Bucket=bucket_name, Key=film_id, Body=file_content)
             logger.info(f"File for film_id {film_id} uploaded successfully to S3 bucket {bucket_name}")
+            # Send message to SQS queue
+            response = sqs_client.send_message(
+                QueueUrl=os.environ['FILM_UPLOAD_QUEUE_URL'],
+                MessageBody=json.dumps({
+                    'film_id': film_id
+                })
+            )
 
         except Exception as e:
             logger.error(f"Error uploading file to S3: {str(e)}")

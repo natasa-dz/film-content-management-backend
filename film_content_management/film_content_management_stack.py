@@ -7,7 +7,10 @@ from aws_cdk import (
     aws_cognito as cognito,
     aws_iam as iam,
     aws_lambda_event_sources as lambda_event_sources,
-    aws_sns as sns
+    aws_sns as sns,
+    aws_stepfunctions as sfn,
+    aws_stepfunctions_tasks as tasks,
+    aws_sqs as sqs
     )
 
 from aws_cdk import Stack
@@ -23,6 +26,8 @@ class FilmContentManagementStack(Stack):
         # Create S3 bucket with CORS configuration
         content_bucket = s3.Bucket(
             self,"ContentBucket",
+           # bucket_name="content-bucket-cloud-film-app-dusan",
+            
             bucket_name="content-bucket-cloud-film-app",
 
             cors=[
@@ -290,6 +295,16 @@ class FilmContentManagementStack(Stack):
             }
         )
 
+
+        # Create an SQS queue
+        film_upload_queue = sqs.Queue(
+            self, "FilmUploadQueue",
+            visibility_timeout=core.Duration.seconds(900)
+        )
+
+        # Create an event source mapping for the Lambda function
+        sqs_event_source = lambda_event_sources.SqsEventSource(film_upload_queue)
+
         # Lambda functions for CREATE, UPDATE, and GET
         create_film_function = _lambda.Function(
             self, "CreateFilmFunction",
@@ -302,10 +317,31 @@ class FilmContentManagementStack(Stack):
                 'USER_POOL_ID': user_pool.user_pool_id,
                 'USER_POOL_CLIENT_ID': user_pool_client.user_pool_client_id,
                 'SUBSCRIPTIONS_TABLE': subscription_table.table_name,
-                'SNS_TOPIC_ARN': sns_topic.topic_arn  # Add SNS topic ARN as environment variable
+                'SNS_TOPIC_ARN': sns_topic.topic_arn,  # Add SNS topic ARN as environment variable,
+                'FILM_UPLOAD_QUEUE_URL': film_upload_queue.queue_url
 
             },
             timeout=aws_cdk.Duration.seconds(900)  # Set timeout to 5 minutes (15 min = 900s maximum allowed)
+        )
+
+        # Add policy to the Create Film Lambda function to allow sending messages to the SQS queue
+        create_film_function.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "sqs:SendMessage"
+                ],
+                resources=[
+                    film_upload_queue.queue_arn
+                ]
+            )
+        )
+
+        #Transcode Lambda layer with FFmpeg
+        # Create Lambda Layer
+        ffmpeg_layer = _lambda.LayerVersion(self, "FFmpegLayer",
+            code=_lambda.AssetCode("lambda/layers/ffmpeg"),
+            compatible_runtimes=[_lambda.Runtime.PYTHON_3_9],
+            description="A layer with FFmpeg"
         )
 
         # Transcode Lambda function
@@ -314,11 +350,99 @@ class FilmContentManagementStack(Stack):
             runtime=_lambda.Runtime.PYTHON_3_9,
             handler="transcode_handler.handler",
             code=_lambda.Code.from_asset("transcoding_service"),
-            timeout=aws_cdk.Duration.minutes(15),
+            timeout=core.Duration.minutes(15),
+            memory_size=3007,
             environment={
                 'CONTENT_BUCKET': content_bucket.bucket_name,
-            }
+            },
+            layers= [ffmpeg_layer]
         )
+
+        # Add policy to the lambda function to allow describing executions
+        transcode_function.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["states:DescribeExecution"],
+                resources=["arn:aws:states:{}:{}:execution:*:*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID)]
+            )
+        )
+
+        # Create Step Function Task
+        transcode_task = tasks.LambdaInvoke(
+            self, "TranscodeTask",
+            lambda_function=transcode_function,
+            payload=sfn.TaskInput.from_object({
+                "film_id": sfn.JsonPath.string_at("$.film_id")
+            }),
+            result_path="$.transcode_result",
+            output_path="$.transcode_result",
+            timeout=core.Duration.minutes(30)
+        ).add_retry(
+            max_attempts=3,
+            interval=core.Duration.seconds(30),
+            backoff_rate=2.0
+        ).add_catch(
+            sfn.Fail(self, "Failed", error="TranscodingFailed", cause="Transcoding failed after three atempts"),
+            errors=["States.ALL"]
+        ).next(
+            sfn.Succeed(self, "Succeeded")
+        )
+
+        state_machine = sfn.StateMachine(
+            self, "StateMachine",
+            definition=transcode_task,
+            timeout=core.Duration.minutes(30)
+        )
+
+        # Create API Lambda Function
+        step_function_transcoding = _lambda.Function(
+            self, "StepFunctionTranscoding",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="step_func_api_handler.handler",
+            code=_lambda.Code.from_asset("transcoding_service"),
+            environment={
+                'STATE_MACHINE_ARN': state_machine.state_machine_arn
+            },
+            timeout=core.Duration.minutes(15)
+        )
+
+        #add so this step_function_transcoding is triggered by adding message to sqs queue
+        step_function_transcoding.add_event_source(sqs_event_source)
+
+        # Add policy to the API Lambda function to allow starting and describing executions
+        step_function_transcoding.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "states:StartExecution",
+                    "states:DescribeExecution"
+                ],
+                resources=[
+                    state_machine.state_machine_arn,
+                    "arn:aws:states:{}:{}:execution:*:*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID)
+
+                ]
+            )
+        )
+
+          # Lambda function to check the execution status
+        status_check_function = _lambda.Function(
+            self, "StatusCheckFunction",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="poll_step_func.handler",
+            code=_lambda.Code.from_asset("transcoding_service"),
+            environment={
+                'STATE_MACHINE_ARN': state_machine.state_machine_arn
+            },
+            timeout=core.Duration.minutes(10)
+        )
+
+          # Add policy to the lambda function to allow describing executions
+        status_check_function.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["states:DescribeExecution"],
+                resources=["arn:aws:states:{}:{}:execution:*:*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID)]
+            )
+        )
+
 
         update_film_function = _lambda.Function(
             self, "UpdateFilmFunction",
@@ -448,12 +572,15 @@ class FilmContentManagementStack(Stack):
         content_bucket.grant_read(search_film_function)
 
         content_bucket.grant_read(generate_feed_function)
-        content_bucket.grant_read_write(transcode_function)
 
         # Grant publish permissions to your transcode Lambda function
         sns_topic.grant_publish(create_film_function)
         sns_topic.grant_publish(notification_function)
 
+        # Grant step function
+        content_bucket.grant_read_write(transcode_function)
+        state_machine.grant_start_execution(step_function_transcoding)
+        content_bucket.grant_read_write(step_function_transcoding)
 
 
         # grants dynamoDB
@@ -560,6 +687,7 @@ class FilmContentManagementStack(Stack):
             get_film_integration
         )
 
+
         search = api.root.add_resource("search")
         search_film_integration = apigateway.LambdaIntegration(search_film_function)
         search.add_method(
@@ -570,6 +698,12 @@ class FilmContentManagementStack(Stack):
         )
 
         film = films.add_resource("{film_id}")
+        film.add_method("POST", apigateway.LambdaIntegration(step_function_transcoding))
+
+        transcode_status = api.root.add_resource("status")
+        transcode_status = transcode_status.add_resource("{executionArn}")
+        transcode_status.add_method("GET", apigateway.LambdaIntegration(status_check_function))
+        
         update_film_integration = apigateway.LambdaIntegration(update_film_function)
         film.add_method(
             "PATCH",
@@ -665,20 +799,18 @@ class FilmContentManagementStack(Stack):
                                  authorization_type=apigateway.AuthorizationType.CUSTOM,
                                  authorizer=authorizer_user)
 
-# ----------- transcoding
-        transcoder=films.add_resource("transcode")
-        transcoder.add_method("POST",
-                              apigateway.LambdaIntegration(transcode_function),
-                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
-                                 authorizer=authorizer_user)
 
+
+    
 
     # Outputs
-        aws_cdk.CfnOutput(self, "ContentBucketName", value=content_bucket.bucket_name)
-        aws_cdk.CfnOutput(self, "MetadataTableName", value=movie_table.table_name)
-        aws_cdk.CfnOutput(self, "ReviewTableName", value=review_table.table_name)
-        aws_cdk.CfnOutput(self, "SubscriptionsTableName", value=subscription_table.table_name)
-        aws_cdk.CfnOutput(self, "ApiUrl", value=api.url)
-        aws_cdk.CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
-        aws_cdk.CfnOutput(self, "UserPoolClientId", value=user_pool_client.user_pool_client_id)
-        aws_cdk.CfnOutput(self, "RegistrationLoginApiUrl", value=api.url)
+        core.CfnOutput(self, "ContentBucketName", value=content_bucket.bucket_name)
+        core.CfnOutput(self, "MetadataTableName", value=movie_table.table_name)
+        core.CfnOutput(self, "ReviewTableName", value=review_table.table_name)
+        core.CfnOutput(self, "SubscriptionsTableName", value=subscription_table.table_name)
+        core.CfnOutput(self, "ApiUrl", value=api.url)
+        core.CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
+        core.CfnOutput(self, "UserPoolClientId", value=user_pool_client.user_pool_client_id)
+        core.CfnOutput(self, "RegistrationLoginApiUrl", value=api.url)
+        core.CfnOutput(self, "StateMachineArn", value=state_machine.state_machine_arn)
+
