@@ -457,122 +457,112 @@ class FilmContentManagementStack(Stack):
 
 # ------------------- API METHODS
 
-        auth_lambda = _lambda.Function(
-            self, "AuthFunction",
+        # Lambda funkcija za autorizaciju
+        auth_lambda_admin = _lambda.Function(
+            self, "AuthFunctionAdmin",
             runtime=_lambda.Runtime.PYTHON_3_9,
-            handler="authorization.permission_handler",
+            handler="authorization_admin.permission_handler",
             code=_lambda.Code.from_asset("authorization"),
             environment={
                 'USER_POOL_ID': user_pool.user_pool_id,
             }
         )
 
-        # api = apigateway.RestApi(
-        #     self, "FilmContentManagementAPI",
-        #     rest_api_name="Film Content Management Service",
-        #     description="This service serves film content."
-        # )
-
-        # Define the Lambda authorizer
-        authorizer = apigateway.TokenAuthorizer(
-            self, "APIGatewayAuthorizer",
-            handler=auth_lambda,
+        # Definisanje Lambda authorizera
+        authorizer_admin = apigateway.TokenAuthorizer(
+            self, "APIGatewayAuthorizerAdmin",
+            handler=auth_lambda_admin,
             identity_source=apigateway.IdentitySource.header("Authorization")
         )
 
-# -------- movie service
-#         films = api.root.add_resource("films")
-#         films.add_method("POST",apigateway.LambdaIntegration(create_film_function))
+        # Lambda funkcija za autorizaciju
+        auth_lambda_user = _lambda.Function(
+            self, "AuthFunctionUser",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="authorization_user.permission_handler",
+            code=_lambda.Code.from_asset("authorization"),
+            environment={
+                'USER_POOL_ID': user_pool.user_pool_id,
+            }
+        )
 
+        # Definisanje Lambda authorizera
+        authorizer_user = apigateway.TokenAuthorizer(
+            self, "APIGatewayAuthorizerUser",
+            handler=auth_lambda_user,
+            identity_source=apigateway.IdentitySource.header("Authorization")
+        )
+
+        # Definisanje endpoint-a za kreiranje filma
         films = api.root.add_resource("films")
         create_film_integration = apigateway.LambdaIntegration(create_film_function)
         films.add_method(
             "POST",
             create_film_integration,
-            authorizer=authorizer
+            authorization_type=apigateway.AuthorizationType.CUSTOM,
+            authorizer=authorizer_admin
         )
 
-        # films.add_method("GET", apigateway.LambdaIntegration(get_film_function))
         get_films_integration = apigateway.LambdaIntegration(get_film_function)
         films.add_method(
             "GET",
-            get_films_integration,
-            authorizer=authorizer
+            get_films_integration
         )
-
-
-        # search = api.root.add_resource("search")
-        # search.add_method("GET", apigateway.LambdaIntegration(search_film_function))
 
         search = api.root.add_resource("search")
         search_film_integration = apigateway.LambdaIntegration(search_film_function)
         search.add_method(
             "GET",
             search_film_integration,
-            authorizer=authorizer
+            authorization_type=apigateway.AuthorizationType.CUSTOM,
+            authorizer=authorizer_user
         )
-
-
-        # film = films.add_resource("{film_id}")
-        # film.add_method("PATCH", apigateway.LambdaIntegration(update_film_function))
 
         film = films.add_resource("{film_id}")
         update_film_integration = apigateway.LambdaIntegration(update_film_function)
         film.add_method(
             "PATCH",
             update_film_integration,
-            authorizer=authorizer
+            authorization_type=apigateway.AuthorizationType.CUSTOM,
+            authorizer=authorizer_admin
         )
 
-
-        # film.add_method("GET", apigateway.LambdaIntegration(get_film_function))
         get_film_integration = apigateway.LambdaIntegration(get_film_function)
         film.add_method(
             "GET",
-            get_film_integration,
-            authorizer=authorizer
+            get_film_integration
         )
 
-        # film.add_method("DELETE", apigateway.LambdaIntegration(delete_film_function))
         delete_film_integration = apigateway.LambdaIntegration(delete_film_function)
         films.add_method(
             "DELETE",
             delete_film_integration,
-            authorizer=authorizer
+            authorization_type=apigateway.AuthorizationType.CUSTOM,
+            authorizer=authorizer_admin
         )
 
-        # download = api.root.add_resource("download")
-        # download.add_method("GET", apigateway.LambdaIntegration(get_film_function))
         download = api.root.add_resource("download")
         download_integration = apigateway.LambdaIntegration(get_film_function)
         download.add_method(
             "GET",
             download_integration,
-            authorizer=authorizer
+            authorization_type = apigateway.AuthorizationType.CUSTOM,
+            authorizer = authorizer_user
         )
 # ----------- cognito
-
-        # confirm_resource = api.root.add_resource("confirm")
-        # confirm_resource.add_method("POST", apigateway.LambdaIntegration(registration_login_lambda))
         confirm_resource = api.root.add_resource("confirm")
         confirm_integration = apigateway.LambdaIntegration(registration_login_lambda)
         confirm_resource.add_method(
             "POST",
-            confirm_integration,
-            authorizer=authorizer
+            confirm_integration
         )
 
-        # register = api.root.add_resource("register")
-        # register_integration = apigateway.LambdaIntegration(registration_login_lambda)
         register = api.root.add_resource("register")
         register_integration = apigateway.LambdaIntegration(registration_login_lambda)
         register.add_method(
             "POST",
             register_integration
         )
-        #
-        # register.add_method("POST", register_integration)
-
 
         login = api.root.add_resource("login")
         login_integration = apigateway.LambdaIntegration(registration_login_lambda)
@@ -590,37 +580,45 @@ class FilmContentManagementStack(Stack):
         subscriptions = api.root.add_resource("subscriptions")
         subscriptions.add_method("POST"
                                  ,apigateway.LambdaIntegration(create_subscription_function),
-                                 authorizer = authorizer)
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user
+                                 )
         subscriptions.add_method("GET",
                                  apigateway.LambdaIntegration(list_subscriptions_function),
-                                 authorizer = authorizer)
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user)
         subscriptions.add_method("DELETE",
                                  apigateway.LambdaIntegration(delete_subscription_function),
-                                 authorizer = authorizer)
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user)
 
 
 # ----------- reviews
         reviews = film.add_resource("reviews")
         reviews.add_method("POST",
                            apigateway.LambdaIntegration(review_function),
-                           authorizer = authorizer)
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user)
 
 # ----------- feed
         generate_feed = api.root.add_resource("generate-feed")
         generate_feed.add_method("GET",
                                  apigateway.LambdaIntegration(generate_feed_function),
-                                 authorizer = authorizer)
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user)
 
         get_feed = api.root.add_resource("get-feed")
         get_feed.add_method("GET",
                             apigateway.LambdaIntegration(get_feed_function),
-                            authorizer = authorizer)
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user)
 
 # ----------- transcoding
         transcoder=films.add_resource("transcode")
         transcoder.add_method("POST",
                               apigateway.LambdaIntegration(transcode_function),
-                              authorizer = authorizer)
+                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
+                                 authorizer=authorizer_user)
 
 
     # Outputs

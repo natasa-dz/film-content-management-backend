@@ -1,4 +1,8 @@
 import jwt
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
 
 def permission_handler(event, context):
     print(event)
@@ -16,11 +20,13 @@ def permission_handler(event, context):
         user_groups = jwt_decode.get('cognito:groups', [])
         method_arn = event['methodArn']
 
+
         # Provjera dopuštenja na temelju korisničkih grupa
         if 'admin' in [group.lower() for group in user_groups]:
             effect = 'Allow'
         else:
             effect = 'Deny'
+
 
         return {
             'principalId': principal_id,
