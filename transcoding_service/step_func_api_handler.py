@@ -18,12 +18,6 @@ def handler(event, context):
         'Access-Control-Allow-Headers': 'Content-Type,Authorization'
     }
 
-    # if event['httpMethod'] == 'OPTIONS':
-    #     return {
-    #         'statusCode': 200,
-    #         'headers': headers,
-    #         'body': json.dumps('CORS preflight check passed')
-    #     }
     
     logger.info(f"Received event: {event}")
     
@@ -38,8 +32,6 @@ def handler(event, context):
 
     state_machine_arn = os.environ['STATE_MACHINE_ARN']
     logger.info(f"STATE_MACHINE_ARN: {state_machine_arn}")
-    # film_id = event['pathParameters']['film_id']
-    # logger.info(f"FILM_ID: {film_id}")
     
     try:
         logger.info("STARTING STEP FUNCTION EXECUTION")

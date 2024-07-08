@@ -6,6 +6,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 client = boto3.client('stepfunctions')
 
+#nece se koristiti realno se moze ceo fajl obrisati al ajde....nek ostane za svaki slucaj
 def handler(event, context):
     headers = {
         'Content-Type': 'application/json',

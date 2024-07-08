@@ -37,7 +37,6 @@ def handler(event, context):
         if not film_id:
             raise ValueError("Missing film_id in request body")
 
-        # raise Exception("ERROR TEST 3 TIMES AND BAD STATUS RETURN TO CLIENT")
         # Download the original file
         input_file = f"/tmp/{os.path.basename(film_id)}"
         if not check_file_exists_tmp(input_file):
@@ -61,25 +60,9 @@ def handler(event, context):
             logger.info(f"Transcoding to 480p")
             transcode_and_upload(input_file, bucket, key_480, "854:480")
         
-        # return {
-        #     'statusCode': 200,
-        #     'headers': headers,
-        #     'body': json.dumps({
-        #         'message': 'Transcoding and upload successful',
-        #         'film_id': film_id
-        #     })
-        # }
 
     except Exception as e:
         logger.error(f"Error transcoding or uploading: {e}")
-        # return {
-        #     'statusCode': 500,
-        #     'headers': headers,
-        #     'body': json.dumps({
-        #         'message': 'Error during transcoding',
-        #         'error': str(e)
-        #     })
-        # }
         raise e
     
 
