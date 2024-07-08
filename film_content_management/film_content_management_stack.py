@@ -514,10 +514,10 @@ class FilmContentManagementStack(Stack):
             authorizer=authorizer_admin
         )
 
-        get_films_integration = apigateway.LambdaIntegration(get_film_function)
+        get_film_integration = apigateway.LambdaIntegration(get_film_function)
         films.add_method(
             "GET",
-            get_films_integration
+            get_film_integration
         )
 
         search = api.root.add_resource("search")
@@ -545,7 +545,7 @@ class FilmContentManagementStack(Stack):
         )
 
         delete_film_integration = apigateway.LambdaIntegration(delete_film_function)
-        films.add_method(
+        film.add_method(
             "DELETE",
             delete_film_integration,
             authorization_type=apigateway.AuthorizationType.CUSTOM,
