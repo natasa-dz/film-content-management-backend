@@ -39,6 +39,7 @@ def handler(event, context):
 
         film_id = event['queryStringParameters'].get('film_id') if event.get('queryStringParameters') else None
         user_id = event['queryStringParameters'].get('user_id') if event.get('queryStringParameters') else None
+        resolution = event['queryStringParameters'].get('resolution') if event.get('queryStringParameters') else None
 
         if film_id:
             response = table.get_item(Key={'film_id': film_id})
@@ -52,6 +53,12 @@ def handler(event, context):
                 }
 
             s3_key = f"{film_id}"
+            if(resolution != "original"):
+                s3_key = f"{film_id}_{resolution}.mp4"
+            if(resolution== None):
+                s3_key = f"{film_id}"
+                
+            logger.info(f"LALALA s3_key:{s3_key}")
 
             try:
                 response = s3_client.get_object(Bucket=bucket_name, Key=s3_key)

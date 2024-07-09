@@ -36,7 +36,7 @@ def permission_handler(event, context):
 
     except Exception as e:
         return {
-            'principalId': 'user',
+            'principalId': 'admin',
             'policyDocument': {
                 'Version': '2012-10-17',
                 'Statement': [{
