@@ -121,6 +121,7 @@ def handler(event, context):
         'statusCode': 200,
         'body': json.dumps({'message': 'Feed updated successfully'}),
         'headers': {
+            'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
             'Access-Control-Allow-Headers': 'Content-Type,Authorization'

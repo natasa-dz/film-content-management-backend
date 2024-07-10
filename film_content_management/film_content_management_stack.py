@@ -299,7 +299,7 @@ class FilmContentManagementStack(Stack):
         # Create an SQS queue
         film_upload_queue = sqs.Queue(
             self, "FilmUploadQueue",
-            visibility_timeout=core.Duration.seconds(900)
+            visibility_timeout=aws_cdk.Duration.seconds(900)
         )
 
         # Create an event source mapping for the Lambda function
@@ -350,7 +350,7 @@ class FilmContentManagementStack(Stack):
             runtime=_lambda.Runtime.PYTHON_3_9,
             handler="transcode_handler.handler",
             code=_lambda.Code.from_asset("transcoding_service"),
-            timeout=core.Duration.minutes(15),
+            timeout=aws_cdk.Duration.minutes(15),
             memory_size=3007,
             environment={
                 'CONTENT_BUCKET': content_bucket.bucket_name,
@@ -362,7 +362,7 @@ class FilmContentManagementStack(Stack):
         transcode_function.add_to_role_policy(
             iam.PolicyStatement(
                 actions=["states:DescribeExecution"],
-                resources=["arn:aws:states:{}:{}:execution:*:*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID)]
+                resources=["arn:aws:states:{}:{}:execution:*:*".format(aws_cdk.Aws.REGION, aws_cdk.Aws.ACCOUNT_ID)]
             )
         )
 
@@ -375,10 +375,10 @@ class FilmContentManagementStack(Stack):
             }),
             result_path="$.transcode_result",
             output_path="$.transcode_result",
-            timeout=core.Duration.minutes(30)
+            timeout=aws_cdk.Duration.minutes(30)
         ).add_retry(
             max_attempts=3,
-            interval=core.Duration.seconds(30),
+            interval=aws_cdk.Duration.seconds(30),
             backoff_rate=2.0
         ).add_catch(
             sfn.Fail(self, "Failed", error="TranscodingFailed", cause="Transcoding failed after three atempts"),
@@ -390,7 +390,7 @@ class FilmContentManagementStack(Stack):
         state_machine = sfn.StateMachine(
             self, "StateMachine",
             definition=transcode_task,
-            timeout=core.Duration.minutes(30)
+            timeout=aws_cdk.Duration.minutes(30)
         )
 
         # Create API Lambda Function
@@ -402,7 +402,7 @@ class FilmContentManagementStack(Stack):
             environment={
                 'STATE_MACHINE_ARN': state_machine.state_machine_arn
             },
-            timeout=core.Duration.minutes(15)
+            timeout=aws_cdk.Duration.minutes(15)
         )
 
         #add so this step_function_transcoding is triggered by adding message to sqs queue
@@ -417,7 +417,7 @@ class FilmContentManagementStack(Stack):
                 ],
                 resources=[
                     state_machine.state_machine_arn,
-                    "arn:aws:states:{}:{}:execution:*:*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID)
+                    "arn:aws:states:{}:{}:execution:*:*".format(aws_cdk.Aws.REGION, aws_cdk.Aws.ACCOUNT_ID)
 
                 ]
             )
@@ -432,14 +432,14 @@ class FilmContentManagementStack(Stack):
             environment={
                 'STATE_MACHINE_ARN': state_machine.state_machine_arn
             },
-            timeout=core.Duration.minutes(10)
+            timeout=aws_cdk.Duration.minutes(10)
         )
 
           # Add policy to the lambda function to allow describing executions
         status_check_function.add_to_role_policy(
             iam.PolicyStatement(
                 actions=["states:DescribeExecution"],
-                resources=["arn:aws:states:{}:{}:execution:*:*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID)]
+                resources=["arn:aws:states:{}:{}:execution:*:*".format(aws_cdk.Aws.REGION, aws_cdk.Aws.ACCOUNT_ID)]
             )
         )
 
@@ -730,11 +730,8 @@ class FilmContentManagementStack(Stack):
         download_integration = apigateway.LambdaIntegration(get_film_function)
         download.add_method(
             "GET",
-            download_integration,
-            authorization_type = apigateway.AuthorizationType.CUSTOM,
-            authorizer = authorizer_user
-        )
-# ----------- cognito
+            download_integration)
+
         confirm_resource = api.root.add_resource("confirm")
         confirm_integration = apigateway.LambdaIntegration(registration_login_lambda)
         confirm_resource.add_method(
@@ -763,54 +760,38 @@ class FilmContentManagementStack(Stack):
 
         subscriptions = api.root.add_resource("subscriptions")
         subscriptions.add_method("POST"
-                                 ,apigateway.LambdaIntegration(create_subscription_function),
-                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
-                                 authorizer=authorizer_user
+                                 ,apigateway.LambdaIntegration(create_subscription_function)
                                  )
         subscriptions.add_method("GET",
-                                 apigateway.LambdaIntegration(list_subscriptions_function),
-                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
-                                 authorizer=authorizer_user)
+                                 apigateway.LambdaIntegration(list_subscriptions_function))
         subscriptions.add_method("DELETE",
-                                 apigateway.LambdaIntegration(delete_subscription_function),
-                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
-                                 authorizer=authorizer_user)
+                                 apigateway.LambdaIntegration(delete_subscription_function))
 
 
 # ----------- reviews
         reviews = film.add_resource("reviews")
         reviews.add_method("POST",
-                           apigateway.LambdaIntegration(review_function),
-                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
-                                 authorizer=authorizer_user)
+                           apigateway.LambdaIntegration(review_function))
 
 # ----------- feed
         generate_feed = api.root.add_resource("generate-feed")
-
         generate_feed.add_method("POST",
-                                 apigateway.LambdaIntegration(generate_feed_function),
-                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
-                                 authorizer=authorizer_user)
+                                 apigateway.LambdaIntegration(generate_feed_function))
 
 
         get_feed = api.root.add_resource("get-feed")
         get_feed.add_method("GET",
-                            apigateway.LambdaIntegration(get_feed_function),
-                                 authorization_type=apigateway.AuthorizationType.CUSTOM,
-                                 authorizer=authorizer_user)
+                            apigateway.LambdaIntegration(get_feed_function))
 
-
-
-    
 
     # Outputs
-        core.CfnOutput(self, "ContentBucketName", value=content_bucket.bucket_name)
-        core.CfnOutput(self, "MetadataTableName", value=movie_table.table_name)
-        core.CfnOutput(self, "ReviewTableName", value=review_table.table_name)
-        core.CfnOutput(self, "SubscriptionsTableName", value=subscription_table.table_name)
-        core.CfnOutput(self, "ApiUrl", value=api.url)
-        core.CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
-        core.CfnOutput(self, "UserPoolClientId", value=user_pool_client.user_pool_client_id)
-        core.CfnOutput(self, "RegistrationLoginApiUrl", value=api.url)
-        core.CfnOutput(self, "StateMachineArn", value=state_machine.state_machine_arn)
+        aws_cdk.CfnOutput(self, "ContentBucketName", value=content_bucket.bucket_name)
+        aws_cdk.CfnOutput(self, "MetadataTableName", value=movie_table.table_name)
+        aws_cdk.CfnOutput(self, "ReviewTableName", value=review_table.table_name)
+        aws_cdk.CfnOutput(self, "SubscriptionsTableName", value=subscription_table.table_name)
+        aws_cdk.CfnOutput(self, "ApiUrl", value=api.url)
+        aws_cdk.CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
+        aws_cdk.CfnOutput(self, "UserPoolClientId", value=user_pool_client.user_pool_client_id)
+        aws_cdk.CfnOutput(self, "RegistrationLoginApiUrl", value=api.url)
+        aws_cdk.CfnOutput(self, "StateMachineArn", value=state_machine.state_machine_arn)
 
